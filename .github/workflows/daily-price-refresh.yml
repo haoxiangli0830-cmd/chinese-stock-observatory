@@ -1,0 +1,31 @@
+name: 每日A股价格更新
+
+on:
+  schedule:
+    # 工作日17:30（北京时间）运行，节假日无数据时安全结束。
+    - cron: "30 9 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 安装数据工具
+        run: pip install -r requirements.txt
+
+      - name: 更新日线数据
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+        run: python scripts/sync_market_data.py
