@@ -34,6 +34,7 @@ interface PriceSeries {
   symbol: string;
   points: PricePoint[];
   source: string;
+  actualAdjustment?: Adjustment;
 }
 
 interface SearchResult {
@@ -95,7 +96,7 @@ export default function DashboardClient() {
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(["600036"]);
   const [period, setPeriod] = useState<Period>("1Y");
-  const [adjustment, setAdjustment] = useState<Adjustment>("qfq");
+  const [adjustment, setAdjustment] = useState<Adjustment>("raw");
   const [comparison, setComparison] = useState(false);
   const [series, setSeries] = useState<PriceSeries[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +134,16 @@ export default function DashboardClient() {
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error ?? "读取行情失败");
-      setSeries(payload.series ?? []);
+      const nextSeries = payload.series ?? [];
+      setSeries(nextSeries);
+      if (
+        adjustment === "qfq" &&
+        nextSeries.some((item) => item.actualAdjustment === "raw")
+      ) {
+        setMessage(
+          "前复权日线尚未写入缓存，当前显示不复权历史快照；配置每日同步后会自动切换。",
+        );
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "读取行情失败");
     } finally {
@@ -723,8 +733,9 @@ export default function DashboardClient() {
         <div>
           <strong>数据说明</strong>
           <p>
-            日线更新以Tushare为主要计划数据源，AKShare/东方财富作为备用。
-            交易所、币种、复权方式、更新时间与延迟状态均保留。
+            日线更新以Tushare为主要计划数据源，AKShare/东方财富作为备用；
+            内置历史快照保证初次部署也能查看九家银行。交易所、币种、复权方式、
+            更新时间与延迟状态均保留。
           </p>
         </div>
         <div className="source-links">

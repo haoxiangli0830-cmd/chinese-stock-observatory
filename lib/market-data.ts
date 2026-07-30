@@ -1,9 +1,14 @@
 import type { Adjustment, Period, PricePoint } from "./types";
+import fallbackData from "./bank-price-fallback.json";
 
 const EASTMONEY_HISTORY =
   "https://push2his.eastmoney.com/api/qt/stock/kline/get";
 const EASTMONEY_QUOTE = "https://push2.eastmoney.com/api/qt/stock/get";
 const EASTMONEY_LIST = "https://82.push2.eastmoney.com/api/qt/clist/get";
+const bundledPriceData = fallbackData as Record<
+  string,
+  Array<[string, number, number, number, number, number]>
+>;
 
 function marketId(symbol: string) {
   return symbol.startsWith("6") ? "1" : "0";
@@ -34,6 +39,26 @@ export function periodStart(period: Period) {
           : 60;
   start.setUTCMonth(start.getUTCMonth() - months);
   return start.toISOString().slice(0, 10).replaceAll("-", "");
+}
+
+export function getBundledBankHistory(
+  symbol: string,
+  startDate: string,
+): PricePoint[] {
+  const normalizedStart = `${startDate.slice(0, 4)}-${startDate.slice(4, 6)}-${startDate.slice(6, 8)}`;
+  return (bundledPriceData[symbol] ?? [])
+    .filter(([date]) => date >= normalizedStart)
+    .map(([date, open, high, low, close, volume]) => ({
+      symbol,
+      date,
+      open,
+      high,
+      low,
+      close,
+      volume,
+      adjustment: "raw",
+      source: "内置历史快照（不复权）",
+    }));
 }
 
 export async function fetchEastmoneyHistory(

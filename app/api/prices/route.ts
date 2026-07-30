@@ -1,6 +1,7 @@
 import { queryStoredPrices } from "../../../lib/database";
 import {
   fetchEastmoneyHistory,
+  getBundledBankHistory,
   periodStart,
 } from "../../../lib/market-data";
 import type { Adjustment, Period } from "../../../lib/types";
@@ -35,15 +36,50 @@ export async function GET(request: Request) {
             adjustment,
             period,
           );
-          return { symbol, points, source: "东方财富" };
+          return {
+            symbol,
+            points,
+            source: "东方财富",
+            actualAdjustment: adjustment,
+          };
         } catch (externalError) {
-          const stored = await queryStoredPrices(
+          const startDate = periodStart(period);
+          const requestedCache = await queryStoredPrices(
             symbol,
             adjustment,
-            periodStart(period),
+            startDate,
           );
-          if (!stored.length) throw externalError;
-          return { symbol, points: stored, source: "本地日终缓存" };
+          if (requestedCache.length) {
+            return {
+              symbol,
+              points: requestedCache,
+              source: "日终数据库缓存",
+              actualAdjustment: adjustment,
+            };
+          }
+
+          if (adjustment === "qfq") {
+            const rawCache = await queryStoredPrices(symbol, "raw", startDate);
+            if (rawCache.length) {
+              return {
+                symbol,
+                points: rawCache,
+                source: "日终数据库缓存（不复权回退）",
+                actualAdjustment: "raw" as const,
+              };
+            }
+          }
+
+          const bundled = getBundledBankHistory(symbol, startDate);
+          if (bundled.length) {
+            return {
+              symbol,
+              points: bundled,
+              source: "内置历史快照（不复权）",
+              actualAdjustment: "raw" as const,
+            };
+          }
+          throw externalError;
         }
       }),
     );
