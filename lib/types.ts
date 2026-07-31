@@ -1,5 +1,6 @@
 export type Adjustment = "raw" | "qfq";
 export type Period = "1M" | "6M" | "YTD" | "1Y" | "5Y" | "MAX";
+export type SyncStatus = "pending" | "syncing" | "ready" | "failed";
 
 export interface StockRecord {
   symbol: string;
@@ -13,6 +14,11 @@ export interface StockRecord {
   createdAt: string;
   updatedAt: string;
   lastSuccessAt: string | null;
+  lastAttemptAt: string | null;
+  syncStatus: SyncStatus;
+  errorMessage: string | null;
+  lastPriceDateRaw: string | null;
+  lastPriceDateQfq: string | null;
 }
 
 export interface AnnualRange {

@@ -1,10 +1,11 @@
 import { env } from "cloudflare:workers";
 import {
-  markSyncComplete,
-  upsertAnnualRanges,
+  markSyncResults,
+  markSyncStarted,
+  rebuildAnnualRanges,
   upsertPrices,
 } from "../../../lib/database";
-import type { AnnualRange, PricePoint } from "../../../lib/types";
+import type { PricePoint } from "../../../lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -19,22 +20,31 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as {
       prices?: PricePoint[];
-      annualRanges?: AnnualRange[];
-      symbols?: string[];
-      source?: string;
+      startedSymbols?: string[];
+      results?: Array<{
+        symbol: string;
+        ok: boolean;
+        source?: string;
+        error?: string;
+      }>;
     };
     const prices = Array.isArray(payload.prices) ? payload.prices : [];
-    const annualRanges = Array.isArray(payload.annualRanges)
-      ? payload.annualRanges
+    const startedSymbols = Array.isArray(payload.startedSymbols)
+      ? payload.startedSymbols
       : [];
-    const symbols = Array.isArray(payload.symbols) ? payload.symbols : [];
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    await markSyncStarted(startedSymbols);
     await upsertPrices(prices);
-    await upsertAnnualRanges(annualRanges);
-    await markSyncComplete(symbols, payload.source ?? "Tushare/AKShare");
+    const completedSymbols = results
+      .filter((result) => result.ok)
+      .map((result) => result.symbol);
+    await rebuildAnnualRanges(completedSymbols);
+    await markSyncResults(results);
     return Response.json({
       ok: true,
       priceRows: prices.length,
-      annualRows: annualRanges.length,
+      completed: completedSymbols.length,
+      failed: results.length - completedSymbols.length,
     });
   } catch (error) {
     return Response.json(

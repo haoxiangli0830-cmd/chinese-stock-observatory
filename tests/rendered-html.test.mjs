@@ -25,6 +25,11 @@ test("production build contains the Chinese stock observatory", async () => {
   assert.match(dashboard, /正在加载中国股票价格观察台/);
   assert.match(dashboard, /年度最低价与最高价/);
   assert.match(dashboard, /刷新当前图表/);
+  assert.match(dashboard, /历史数据尚未就绪/);
+  assert.match(dashboard, /当前区间最高价和最低价/);
+  assert.match(dashboard, /自选股管理/);
+  assert.match(dashboard, /AKShare/);
+  assert.doesNotMatch(dashboard, /Tushare/);
   assert.doesNotMatch(dashboard, /Your site is taking shape/);
 
   const workbook = await stat(

@@ -1,9 +1,5 @@
-import { queryStoredPrices } from "../../../lib/database";
-import {
-  fetchEastmoneyHistory,
-  getBundledBankHistory,
-  periodStart,
-} from "../../../lib/market-data";
+import { listStocks, queryStoredPrices } from "../../../lib/database";
+import { getBundledBankHistory, periodStart } from "../../../lib/market-data";
 import type { Adjustment, Period } from "../../../lib/types";
 
 const periods = new Set(["1M", "6M", "YTD", "1Y", "5Y", "MAX"]);
@@ -28,59 +24,64 @@ export async function GET(request: Request) {
   }
 
   try {
+    const stockLookup = new Map(
+      (await listStocks()).map((stock) => [stock.symbol, stock]),
+    );
+    const startDate = periodStart(period);
     const series = await Promise.all(
       symbols.map(async (symbol) => {
-        try {
-          const points = await fetchEastmoneyHistory(
-            symbol,
-            adjustment,
-            period,
-          );
+        const stock = stockLookup.get(symbol);
+        const requestedCache = await queryStoredPrices(
+          symbol,
+          adjustment,
+          startDate,
+        );
+        if (requestedCache.length) {
           return {
             symbol,
-            points,
-            source: "东方财富",
+            points: requestedCache,
+            source: "AKShare 日终数据库",
             actualAdjustment: adjustment,
+            syncStatus: stock?.syncStatus ?? "ready",
+            lastSuccessAt: stock?.lastSuccessAt ?? null,
           };
-        } catch (externalError) {
-          const startDate = periodStart(period);
-          const requestedCache = await queryStoredPrices(
-            symbol,
-            adjustment,
-            startDate,
-          );
-          if (requestedCache.length) {
-            return {
-              symbol,
-              points: requestedCache,
-              source: "日终数据库缓存",
-              actualAdjustment: adjustment,
-            };
-          }
-
-          if (adjustment === "qfq") {
-            const rawCache = await queryStoredPrices(symbol, "raw", startDate);
-            if (rawCache.length) {
-              return {
-                symbol,
-                points: rawCache,
-                source: "日终数据库缓存（不复权回退）",
-                actualAdjustment: "raw" as const,
-              };
-            }
-          }
-
-          const bundled = getBundledBankHistory(symbol, startDate);
-          if (bundled.length) {
-            return {
-              symbol,
-              points: bundled,
-              source: "内置历史快照（不复权）",
-              actualAdjustment: "raw" as const,
-            };
-          }
-          throw externalError;
         }
+
+        if (adjustment === "qfq") {
+          const rawCache = await queryStoredPrices(symbol, "raw", startDate);
+          if (rawCache.length) {
+            return {
+              symbol,
+              points: rawCache,
+              source: "AKShare 日终数据库（不复权回退）",
+              actualAdjustment: "raw" as const,
+              syncStatus: stock?.syncStatus ?? "ready",
+              lastSuccessAt: stock?.lastSuccessAt ?? null,
+            };
+          }
+        }
+
+        const bundled = getBundledBankHistory(symbol, startDate);
+        if (bundled.length) {
+          return {
+            symbol,
+            points: bundled,
+            source: "内置历史快照（不复权）",
+            actualAdjustment: "raw" as const,
+            syncStatus: stock?.syncStatus ?? "ready",
+            lastSuccessAt: stock?.lastSuccessAt ?? null,
+          };
+        }
+
+        return {
+          symbol,
+          points: [],
+          source: "AKShare 日终数据库",
+          actualAdjustment: adjustment,
+          syncStatus: stock?.syncStatus ?? "pending",
+          lastSuccessAt: stock?.lastSuccessAt ?? null,
+          error: stock?.errorMessage ?? null,
+        };
       }),
     );
 

@@ -24,6 +24,11 @@ export const seedStocks: StockRecord[] = [
   createdAt: seedTime,
   updatedAt: seedTime,
   lastSuccessAt: seedTime,
+  lastAttemptAt: seedTime,
+  syncStatus: "ready",
+  errorMessage: null,
+  lastPriceDateRaw: null,
+  lastPriceDateQfq: null,
 }));
 
 const values: Record<number, number[][]> = {
