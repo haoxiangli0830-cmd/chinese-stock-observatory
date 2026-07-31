@@ -1,4 +1,4 @@
-"""使用 AKShare 将 A 股日线安全同步到观察台的 D1 数据库。"""
+"""使用 AKShare 将股票与 ETF 日线安全同步到观察台的 D1 数据库。"""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import requests
 FULL_START_DATE = "19900101"
 BATCH_SIZE = 450
 SOURCE_NAME = "AKShare/东方财富"
+ETF_SOURCE_NAME = "AKShare/东方财富ETF"
 FALLBACK_SOURCE_NAME = "AKShare/新浪"
 
 
@@ -116,6 +117,7 @@ def normalize_history_rows(
 
 def fetch_akshare_range(
     symbol: str,
+    instrument_type: str,
     adjustment: str,
     start_date: str,
     end_date: str,
@@ -124,6 +126,28 @@ def fetch_akshare_range(
 
     adjust_value = "" if adjustment == "raw" else "qfq"
     last_error: Exception | None = None
+    if instrument_type == "etf":
+        for attempt in range(3):
+            try:
+                frame = ak.fund_etf_hist_em(
+                    symbol=symbol,
+                    period="daily",
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjust=adjust_value,
+                )
+                return normalize_history_rows(
+                    frame,
+                    symbol,
+                    adjustment,
+                    ETF_SOURCE_NAME,
+                )
+            except Exception as exc:  # public ETF endpoint can be intermittent
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(2**attempt)
+        raise RuntimeError(f"AKShare ETF provider failed: {last_error}")
+
     for attempt in range(3):
         try:
             frame = ak.stock_zh_a_hist(
@@ -212,6 +236,7 @@ def sync_one_stock(
     secret: str,
 ) -> bool:
     symbol = stock["symbol"]
+    instrument_type = stock.get("instrumentType", "stock")
     post_sync(base_url, secret, {"startedSymbols": [symbol]})
     end_date = date.today().strftime("%Y%m%d")
     adjustments = ("qfq",) if mode == "full-qfq" else ("raw", "qfq")
@@ -226,6 +251,7 @@ def sync_one_stock(
             )
             rows = fetch_akshare_range(
                 symbol,
+                instrument_type,
                 adjustment,
                 start_date,
                 end_date,

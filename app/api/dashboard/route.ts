@@ -20,7 +20,7 @@ export async function GET() {
       annualRanges,
       activity,
       lastSync,
-      marketStatus: "AKShare日终数据",
+      marketStatus: "AKShare股票与ETF日终数据",
       currency: "CNY",
       timezone: "Asia/Shanghai",
     });

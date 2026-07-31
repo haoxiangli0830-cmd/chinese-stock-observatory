@@ -1,4 +1,4 @@
-import { searchAStocks } from "../../../lib/market-data";
+import { searchInstruments } from "../../../lib/market-data";
 
 export const dynamic = "force-dynamic";
 
@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const query = new URL(request.url).searchParams.get("q") ?? "";
   if (!query.trim()) return Response.json({ results: [] });
   try {
-    const results = await searchAStocks(query);
+    const results = await searchInstruments(query);
     return Response.json({ results });
   } catch (error) {
     return Response.json(

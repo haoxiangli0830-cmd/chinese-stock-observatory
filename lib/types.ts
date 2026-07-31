@@ -1,6 +1,7 @@
 export type Adjustment = "raw" | "qfq";
 export type Period = "1M" | "6M" | "YTD" | "1Y" | "5Y" | "MAX";
 export type SyncStatus = "pending" | "syncing" | "ready" | "failed";
+export type InstrumentType = "stock" | "etf";
 
 export interface StockRecord {
   symbol: string;
@@ -9,6 +10,7 @@ export interface StockRecord {
   nameEn: string | null;
   currency: string;
   category: string;
+  instrumentType: InstrumentType;
   active: boolean;
   source: string;
   createdAt: string;

@@ -18,6 +18,7 @@ import type {
   ActivityItem,
   Adjustment,
   AnnualRange,
+  InstrumentType,
   Period,
   PricePoint,
   StockRecord,
@@ -46,6 +47,8 @@ interface SearchResult {
   exchange: string;
   nameZh: string;
   nameEn: string | null;
+  instrumentType: InstrumentType;
+  category: string;
   source: string;
 }
 
@@ -76,6 +79,7 @@ const syncLabels: Record<StockRecord["syncStatus"], string> = {
   ready: "数据就绪",
   failed: "同步失败",
 };
+type InstrumentFilter = "all" | InstrumentType;
 
 function highValue(point: PricePoint) {
   return point.high ?? point.close;
@@ -145,6 +149,8 @@ export default function DashboardClient() {
   const [yearStart, setYearStart] = useState(2023);
   const [yearEnd, setYearEnd] = useState(new Date().getFullYear());
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const [instrumentFilter, setInstrumentFilter] =
+    useState<InstrumentFilter>("all");
 
   const loadDashboard = useCallback(async () => {
     const response = await fetch("/api/dashboard", { cache: "no-store" });
@@ -227,6 +233,15 @@ export default function DashboardClient() {
     () => dashboard?.stocks.filter((stock) => stock.active) ?? [],
     [dashboard],
   );
+  const filteredActiveStocks = useMemo(
+    () =>
+      instrumentFilter === "all"
+        ? activeStocks
+        : activeStocks.filter(
+            (stock) => stock.instrumentType === instrumentFilter,
+          ),
+    [activeStocks, instrumentFilter],
+  );
   const stockLookup = useMemo(
     () =>
       new Map(
@@ -303,7 +318,7 @@ export default function DashboardClient() {
           : current.filter((item) => item !== symbol);
       }
       if (current.length >= 5) {
-        setMessage("为保持图表清晰，一次最多比较5只股票");
+        setMessage("为保持图表清晰，一次最多比较5个品种");
         return current;
       }
       return [...current, symbol];
@@ -324,7 +339,7 @@ export default function DashboardClient() {
       };
       if (!response.ok) throw new Error(payload.error ?? "搜索失败");
       setSearchResults(payload.results ?? []);
-      if (!payload.results?.length) setMessage("没有找到匹配的A股公司");
+      if (!payload.results?.length) setMessage("没有找到匹配的股票或ETF");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "搜索失败");
     } finally {
@@ -346,7 +361,7 @@ export default function DashboardClient() {
       setMessage(payload.error ?? "添加失败");
       return;
     }
-    setMessage(payload.message ?? "股票已添加");
+    setMessage(payload.message ?? "品种已添加");
     setQuery("");
     setSearchResults([]);
     setWatchlistOpen(true);
@@ -380,11 +395,25 @@ export default function DashboardClient() {
     if (!nextComparison) setSelectedSymbols((current) => current.slice(0, 1));
   }
 
+  function switchInstrumentFilter(nextFilter: InstrumentFilter) {
+    setInstrumentFilter(nextFilter);
+    const candidates =
+      nextFilter === "all"
+        ? activeStocks
+        : activeStocks.filter((stock) => stock.instrumentType === nextFilter);
+    if (!selectedSymbols.some((symbol) =>
+      candidates.some((stock) => stock.symbol === symbol),
+    )) {
+      setSelectedSymbols(candidates[0] ? [candidates[0].symbol] : []);
+      setComparison(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="loading-screen" role="status">
         <div className="loading-mark">中</div>
-        <p>正在加载中国股票价格观察台…</p>
+        <p>正在加载中国股票与ETF价格观察台…</p>
       </main>
     );
   }
@@ -397,8 +426,8 @@ export default function DashboardClient() {
             中
           </div>
           <div>
-            <p className="eyebrow">中国A股 · 日终观察</p>
-            <h1>中国股票价格观察台</h1>
+            <p className="eyebrow">中国A股与ETF · 日终观察</p>
+            <h1>中国股票与ETF价格观察台</h1>
           </div>
         </div>
         <div className="header-actions">
@@ -408,7 +437,7 @@ export default function DashboardClient() {
             type="button"
             aria-expanded={watchlistOpen}
           >
-            自选股
+            自选品种
           </button>
           <button
             className="button secondary"
@@ -439,15 +468,15 @@ export default function DashboardClient() {
           </span>
           <h2>把价格变化放进时间里看。</h2>
           <p>
-            在同一处查看股价、成交量和年度高低点。历史图表可切换不复权与前复权，
+            在同一处查看股票与ETF价格、成交量和年度高低点。历史图表可切换不复权与前复权，
             比较模式统一从100开始。
           </p>
         </div>
         <div className="metrics">
           <article>
-            <span>启用股票</span>
+            <span>启用品种</span>
             <strong>{activeStocks.length}</strong>
-            <small>银行股与自选股</small>
+            <small>A股、ETF与自选品种</small>
           </article>
           <article>
             <span>最后完整更新</span>
@@ -472,30 +501,46 @@ export default function DashboardClient() {
                 <p className="section-kicker">价格走势</p>
                 <h3>
                   {comparison
-                    ? "多股票标准化比较"
-                    : `${stockLookup.get(selectedSymbols[0])?.nameZh ?? "股票"}价格与成交量`}
+                    ? "多品种标准化比较"
+                    : `${stockLookup.get(selectedSymbols[0])?.nameZh ?? "品种"}价格与成交量`}
                 </h3>
               </div>
-              <div className="segmented" aria-label="图表模式">
-                <button
-                  className={!comparison ? "active" : ""}
-                  onClick={() => switchMode(false)}
-                  type="button"
-                >
-                  单股
-                </button>
-                <button
-                  className={comparison ? "active" : ""}
-                  onClick={() => switchMode(true)}
-                  type="button"
-                >
-                  比较
-                </button>
+              <div className="panel-controls">
+                <div className="segmented" aria-label="品种类型">
+                  {(["all", "stock", "etf"] as InstrumentFilter[]).map(
+                    (item) => (
+                      <button
+                        className={instrumentFilter === item ? "active" : ""}
+                        onClick={() => switchInstrumentFilter(item)}
+                        type="button"
+                        key={item}
+                      >
+                        {item === "all" ? "全部" : item === "stock" ? "A股" : "ETF"}
+                      </button>
+                    ),
+                  )}
+                </div>
+                <div className="segmented" aria-label="图表模式">
+                  <button
+                    className={!comparison ? "active" : ""}
+                    onClick={() => switchMode(false)}
+                    type="button"
+                  >
+                    单品种
+                  </button>
+                  <button
+                    className={comparison ? "active" : ""}
+                    onClick={() => switchMode(true)}
+                    type="button"
+                  >
+                    比较
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="stock-chips" aria-label="选择股票">
-              {activeStocks.map((stock) => (
+            <div className="stock-chips" aria-label="选择股票或ETF">
+              {filteredActiveStocks.map((stock) => (
                 <button
                   type="button"
                   key={stock.symbol}
@@ -505,7 +550,9 @@ export default function DashboardClient() {
                   }
                 >
                   <span>{stock.nameZh}</span>
-                  <small>{stock.symbol}</small>
+                  <small>
+                    {stock.symbol} · {stock.instrumentType === "etf" ? "ETF" : "A股"}
+                  </small>
                 </button>
               ))}
             </div>
@@ -817,7 +864,7 @@ export default function DashboardClient() {
                 <thead>
                   <tr>
                     <th rowSpan={2}>年份</th>
-                    {activeStocks.map((stock) => (
+                    {filteredActiveStocks.map((stock) => (
                       <th colSpan={2} key={stock.symbol}>
                         {stock.nameZh}
                         <small>{stock.symbol}</small>
@@ -825,7 +872,7 @@ export default function DashboardClient() {
                     ))}
                   </tr>
                   <tr>
-                    {activeStocks.map((stock) => (
+                    {filteredActiveStocks.map((stock) => (
                       <FragmentPair key={stock.symbol} />
                     ))}
                   </tr>
@@ -834,7 +881,7 @@ export default function DashboardClient() {
                   {visibleYears.map((year) => (
                     <tr key={year}>
                       <th>{year}</th>
-                      {activeStocks.map((stock) => {
+                      {filteredActiveStocks.map((stock) => {
                         const row = dashboard?.annualRanges.find(
                           (item) =>
                             item.year === year && item.symbol === stock.symbol,
@@ -862,7 +909,7 @@ export default function DashboardClient() {
           <button
             className="drawer-backdrop"
             type="button"
-            aria-label="关闭自选股面板"
+            aria-label="关闭自选品种面板"
             onClick={() => setWatchlistOpen(false)}
           />
         )}
@@ -870,12 +917,12 @@ export default function DashboardClient() {
         <aside className={`side-column ${watchlistOpen ? "open" : ""}`}>
           <div className="drawer-heading">
             <div>
-              <p className="section-kicker">自选股管理</p>
-              <strong>添加与管理股票</strong>
+              <p className="section-kicker">自选品种管理</p>
+              <strong>添加与管理股票、ETF</strong>
             </div>
             <button
               type="button"
-              aria-label="关闭自选股面板"
+              aria-label="关闭自选品种面板"
               onClick={() => setWatchlistOpen(false)}
             >
               关闭
@@ -883,9 +930,9 @@ export default function DashboardClient() {
           </div>
           <article className="panel add-panel">
             <p className="section-kicker">公开观察名单</p>
-            <h3>添加A股公司</h3>
+            <h3>添加股票或ETF</h3>
             <p className="muted">
-              输入6位股票代码或中文公司名称，确认结果后再添加。
+              输入6位证券代码或中文名称，确认结果后再添加。
             </p>
             <div className="search-row">
               <input
@@ -894,8 +941,8 @@ export default function DashboardClient() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") searchStocks();
                 }}
-                placeholder="例如：600036 或 招商银行"
-                aria-label="股票代码或公司名称"
+                placeholder="例如：510300 或 沪深300ETF"
+                aria-label="股票或ETF代码、名称"
               />
               <button
                 type="button"
@@ -912,7 +959,7 @@ export default function DashboardClient() {
                     <span>
                       <strong>{result.nameZh}</strong>
                       <small>
-                        {result.symbol} · {result.exchange}
+                        {result.symbol} · {result.exchange} · {result.instrumentType === "etf" ? "ETF" : "A股"}
                       </small>
                     </span>
                     <button type="button" onClick={() => addStock(result)}>
@@ -923,7 +970,7 @@ export default function DashboardClient() {
               </div>
             )}
             <div className="open-note">
-              所有访问者都可以添加经验证的A股代码。系统不设数量上限，但无效代码不会写入。
+              所有访问者都可以添加经验证的A股或ETF代码。系统不设数量上限，但无效代码不会写入。
             </div>
           </article>
 
@@ -931,7 +978,7 @@ export default function DashboardClient() {
             <div className="panel-heading compact">
               <div>
                 <p className="section-kicker">名单管理</p>
-                <h3>当前股票</h3>
+                <h3>当前品种</h3>
               </div>
               <span className="count-badge">
                 {dashboard?.stocks.length ?? 0}
@@ -956,7 +1003,13 @@ export default function DashboardClient() {
                     </small>
                   </span>
                   <span
-                    className={stock.category === "银行股" ? "tag bank" : "tag"}
+                    className={
+                      stock.instrumentType === "etf"
+                        ? "tag etf"
+                        : stock.category === "银行股"
+                          ? "tag bank"
+                          : "tag"
+                    }
                   >
                     {stock.category}
                   </span>
@@ -989,7 +1042,7 @@ export default function DashboardClient() {
                 ))
               ) : (
                 <p className="muted">
-                  添加、停用或恢复股票后，记录会显示在这里。
+                  添加、停用或恢复品种后，记录会显示在这里。
                 </p>
               )}
             </div>
@@ -1002,7 +1055,7 @@ export default function DashboardClient() {
           <strong>数据说明</strong>
           <p>
             日线数据由AKShare在后台定时采集并写入数据库；网页浏览不会重复请求外部行情源。
-            新股票会自动补齐完整历史，当前年份在每个交易日收盘后增量更新。
+            新股票或ETF会自动补齐完整历史，当前年份在每个交易日收盘后增量更新。
           </p>
         </div>
         <div className="source-links">
@@ -1011,9 +1064,9 @@ export default function DashboardClient() {
             target="_blank"
             rel="noreferrer"
           >
-            AKShare说明
+            AKShare股票与ETF说明
           </a>
-          <a href="/中国股票价格观察台.xlsx">下载完整工作簿</a>
+          <a href="/中国股票价格观察台.xlsx">下载银行历史样本工作簿</a>
         </div>
         <p className="disclaimer">
           本工具仅用于信息整理与研究，不构成任何投资建议。

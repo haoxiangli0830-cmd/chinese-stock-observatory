@@ -11,7 +11,7 @@ export async function PATCH(
     const body = (await request.json()) as { active?: boolean };
     await setStockActive(symbol, Boolean(body.active));
     return Response.json({
-      message: body.active ? "股票已恢复" : "股票已停用，可随时恢复",
+      message: body.active ? "品种已恢复" : "品种已停用，可随时恢复",
     });
   } catch (error) {
     return Response.json(

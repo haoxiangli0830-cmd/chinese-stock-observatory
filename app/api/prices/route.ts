@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     params.get("adjust") === "raw" ? "raw" : "qfq";
 
   if (!symbols.length) {
-    return Response.json({ error: "请选择至少一只股票" }, { status: 400 });
+    return Response.json({ error: "请选择至少一个股票或ETF品种" }, { status: 400 });
   }
 
   try {
