@@ -19,6 +19,7 @@ export const seedStocks: StockRecord[] = [
   nameEn,
   currency: "CNY",
   category: "银行股",
+  instrumentType: "stock" as const,
   active: true,
   source: "东方财富",
   createdAt: seedTime,
@@ -30,6 +31,41 @@ export const seedStocks: StockRecord[] = [
   lastPriceDateRaw: null,
   lastPriceDateQfq: null,
 }));
+
+const etfSeedTime = "2026-08-01T00:00:00.000Z";
+
+export const seedEtfs: StockRecord[] = [
+  ["510300", "SSE", "沪深300ETF", "CSI 300 ETF", "国内宽基"],
+  ["512100", "SSE", "中证1000ETF", "CSI 1000 ETF", "国内宽基"],
+  ["159915", "SZSE", "创业板ETF", "ChiNext ETF", "国内成长"],
+  ["588000", "SSE", "科创50ETF", "STAR 50 ETF", "科创板"],
+  ["159920", "SZSE", "恒生ETF", "Hang Seng ETF", "港股指数"],
+  ["513100", "SSE", "纳指ETF", "Nasdaq 100 ETF", "海外指数"],
+  ["513880", "SSE", "日经225ETF", "Nikkei 225 ETF", "海外指数"],
+  ["513030", "SSE", "德国DAX ETF", "Germany DAX ETF", "海外指数"],
+  ["518880", "SSE", "黄金ETF", "Gold ETF", "商品"],
+  ["511090", "SSE", "30年国债ETF", "30-Year Treasury Bond ETF", "债券"],
+].map(([symbol, exchange, nameZh, nameEn, category]) => ({
+  symbol,
+  exchange,
+  nameZh,
+  nameEn,
+  currency: "CNY",
+  category,
+  instrumentType: "etf" as const,
+  active: true,
+  source: "东方财富ETF",
+  createdAt: etfSeedTime,
+  updatedAt: etfSeedTime,
+  lastSuccessAt: null,
+  lastAttemptAt: null,
+  syncStatus: "pending" as const,
+  errorMessage: null,
+  lastPriceDateRaw: null,
+  lastPriceDateQfq: null,
+}));
+
+export const seedInstruments = [...seedStocks, ...seedEtfs];
 
 const values: Record<number, number[][]> = {
   2023: [

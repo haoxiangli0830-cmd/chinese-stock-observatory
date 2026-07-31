@@ -45,7 +45,7 @@ export async function GET() {
   const watchlistRows = stocks
     .map(
       (stock) =>
-        `<tr><td>${stock.active ? "启用" : "停用"}</td><td>${stock.symbol}</td><td>${escapeHtml(stock.nameZh)}</td><td>${stock.exchange}</td><td>${escapeHtml(stock.category)}</td><td>${escapeHtml(stock.syncStatus)}</td><td>${escapeHtml(stock.source)}</td><td>${escapeHtml(stock.lastPriceDateRaw ?? "待更新")}</td><td>${escapeHtml(stock.lastSuccessAt ?? "待更新")}</td></tr>`,
+        `<tr><td>${stock.active ? "启用" : "停用"}</td><td>${stock.symbol}</td><td>${escapeHtml(stock.nameZh)}</td><td>${stock.instrumentType === "etf" ? "ETF" : "A股"}</td><td>${stock.exchange}</td><td>${escapeHtml(stock.category)}</td><td>${escapeHtml(stock.syncStatus)}</td><td>${escapeHtml(stock.source)}</td><td>${escapeHtml(stock.lastPriceDateRaw ?? "待更新")}</td><td>${escapeHtml(stock.lastSuccessAt ?? "待更新")}</td></tr>`,
     )
     .join("");
 
@@ -59,17 +59,17 @@ export async function GET() {
   td:first-child{text-align:left}.year{font-weight:bold;background:#eef4fa}
   small{font-weight:normal;opacity:.8}
   </style></head><body>
-  <h1>中国股票价格观察台</h1>
+  <h1>中国股票与ETF价格观察台</h1>
   <p>币种：人民币（CNY）｜数据频率：日终｜导出时间：${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}</p>
   <h2>年度最高价与最低价（不复权）</h2>
   <table><tr><th rowspan="2">年份</th>${groupHeaders}</tr><tr>${subHeaders}</tr>${annualRows}</table>
   <h2>观察名单</h2>
-  <table><tr><th>启用状态</th><th>代码</th><th>名称</th><th>交易所</th><th>分类</th><th>同步状态</th><th>数据源</th><th>最新交易日</th><th>最后更新</th></tr>${watchlistRows}</table>
+  <table><tr><th>启用状态</th><th>代码</th><th>名称</th><th>类型</th><th>交易所</th><th>分类</th><th>同步状态</th><th>数据源</th><th>最新交易日</th><th>最后更新</th></tr>${watchlistRows}</table>
   <p>说明：价格仅用于信息与研究，不构成投资建议。</p>
   </body></html>`;
 
   const filename = encodeURIComponent(
-    `中国股票价格观察台_${new Date().toISOString().slice(0, 10)}.xls`,
+    `中国股票与ETF价格观察台_${new Date().toISOString().slice(0, 10)}.xls`,
   );
   return new Response(`\uFEFF${html}`, {
     headers: {

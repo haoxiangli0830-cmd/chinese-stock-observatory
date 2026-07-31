@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { seedAnnualRanges, seedStocks } from "./seed-data";
+import { seedAnnualRanges, seedInstruments } from "./seed-data";
 import type {
   ActivityItem,
   AnnualRange,
@@ -22,6 +22,7 @@ const createStatements = [
     name_en TEXT,
     currency TEXT NOT NULL DEFAULT 'CNY',
     category TEXT NOT NULL DEFAULT '自选股',
+    instrument_type TEXT NOT NULL DEFAULT 'stock',
     active INTEGER NOT NULL DEFAULT 1,
     source TEXT NOT NULL DEFAULT '东方财富',
     created_at TEXT NOT NULL,
@@ -85,6 +86,10 @@ async function ensureStockSyncColumns(db: D1Database) {
       "ALTER TABLE stocks ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending'",
     ],
     ["error_message", "ALTER TABLE stocks ADD COLUMN error_message TEXT"],
+    [
+      "instrument_type",
+      "ALTER TABLE stocks ADD COLUMN instrument_type TEXT NOT NULL DEFAULT 'stock'",
+    ],
   ] as const;
   for (const [column, statement] of additions) {
     if (columns.has(column)) continue;
@@ -112,14 +117,14 @@ export async function ensureDatabase() {
   await ensureStockSyncColumns(db);
 
   await db.batch(
-    seedStocks.map((stock) =>
+    seedInstruments.map((stock) =>
       db
         .prepare(
           `INSERT OR IGNORE INTO stocks
-          (symbol, exchange, name_zh, name_en, currency, category, active, source,
+          (symbol, exchange, name_zh, name_en, currency, category, instrument_type, active, source,
            created_at, updated_at, last_success_at, last_attempt_at, sync_status,
            error_message)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           stock.symbol,
@@ -128,6 +133,7 @@ export async function ensureDatabase() {
           stock.nameEn,
           stock.currency,
           stock.category,
+          stock.instrumentType,
           1,
           stock.source,
           stock.createdAt,
@@ -168,6 +174,7 @@ export async function listStocks(): Promise<StockRecord[]> {
   const result = await getDatabase()
     .prepare(
       `SELECT s.symbol, s.exchange, s.name_zh, s.name_en, s.currency, s.category,
+              s.instrument_type,
               s.active, s.source, s.created_at, s.updated_at, s.last_success_at,
               s.last_attempt_at, s.sync_status, s.error_message,
               (SELECT MAX(p.trade_date) FROM prices p
@@ -186,6 +193,9 @@ export async function listStocks(): Promise<StockRecord[]> {
     nameEn: row.name_en ? String(row.name_en) : null,
     currency: String(row.currency),
     category: String(row.category),
+    instrumentType: String(
+      row.instrument_type ?? "stock",
+    ) as StockRecord["instrumentType"],
     active: Number(row.active) === 1,
     source: String(row.source),
     createdAt: String(row.created_at),
@@ -256,6 +266,8 @@ export async function saveStock(stock: {
   exchange: string;
   nameZh: string;
   nameEn?: string | null;
+  instrumentType: StockRecord["instrumentType"];
+  category: string;
   source: string;
 }) {
   await ensureDatabase();
@@ -265,13 +277,15 @@ export async function saveStock(stock: {
     db
       .prepare(
         `INSERT INTO stocks
-        (symbol, exchange, name_zh, name_en, currency, category, active, source,
+        (symbol, exchange, name_zh, name_en, currency, category, instrument_type, active, source,
          created_at, updated_at, last_success_at, last_attempt_at, sync_status,
          error_message)
-        VALUES (?, ?, ?, ?, 'CNY', '自选股', 1, ?, ?, ?, NULL, NULL, 'pending', NULL)
+        VALUES (?, ?, ?, ?, 'CNY', ?, ?, 1, ?, ?, ?, NULL, NULL, 'pending', NULL)
         ON CONFLICT(symbol) DO UPDATE SET
           name_zh = excluded.name_zh,
           exchange = excluded.exchange,
+          category = excluded.category,
+          instrument_type = excluded.instrument_type,
           active = 1,
           source = excluded.source,
           sync_status = CASE
@@ -289,6 +303,8 @@ export async function saveStock(stock: {
         stock.exchange,
         stock.nameZh,
         stock.nameEn ?? null,
+        stock.category,
+        stock.instrumentType,
         stock.source,
         now,
         now,
@@ -310,7 +326,7 @@ export async function setStockActive(symbol: string, active: boolean) {
     .prepare("SELECT name_zh FROM stocks WHERE symbol = ?")
     .bind(symbol)
     .first<{ name_zh: string }>();
-  if (!row) throw new Error("未找到该股票");
+  if (!row) throw new Error("未找到该品种");
   await db.batch([
     db
       .prepare(
@@ -573,7 +589,7 @@ export async function markSyncResults(
       .bind(
         failureCount
           ? `同步完成 ${successCount} 只，失败 ${failureCount} 只`
-          : `已完成 ${successCount} 只股票的日线更新`,
+          : `已完成 ${successCount} 个股票或ETF品种的日线更新`,
         now,
       ),
   );

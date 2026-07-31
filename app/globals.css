@@ -285,6 +285,13 @@ input:focus-visible {
   align-items: center;
 }
 
+.panel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .panel h3 {
   margin: 5px 0 0;
   font-size: 20px;
@@ -835,6 +842,11 @@ input:focus-visible {
   color: var(--blue-dark);
 }
 
+.tag.etf {
+  background: #e7f5ef;
+  color: #126a4b;
+}
+
 .text-button {
   border: 0;
   background: transparent;
@@ -1073,6 +1085,10 @@ footer p {
   .chart-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .panel-controls {
+    justify-content: flex-start;
   }
 
   .chart-wrap {

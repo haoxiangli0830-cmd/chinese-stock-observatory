@@ -14,6 +14,7 @@ export const stocks = sqliteTable("stocks", {
   nameEn: text("name_en"),
   currency: text("currency").notNull().default("CNY"),
   category: text("category").notNull().default("自选股"),
+  instrumentType: text("instrument_type").notNull().default("stock"),
   active: integer("active").notNull().default(1),
   source: text("source").notNull().default("东方财富"),
   createdAt: text("created_at").notNull(),

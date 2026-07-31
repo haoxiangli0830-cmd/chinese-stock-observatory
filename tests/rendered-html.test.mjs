@@ -6,7 +6,7 @@ const distUrl = new URL("../dist/", import.meta.url);
 
 test("production build contains the Chinese stock observatory", async () => {
   const worker = await readFile(new URL("server/index.js", distUrl), "utf8");
-  assert.match(worker, /中国股票价格观察台/);
+  assert.match(worker, /中国股票与ETF价格观察台/);
   assert.match(worker, /\/api\/dashboard/);
   assert.match(worker, /\/api\/prices/);
   assert.match(worker, /\/api\/export/);
@@ -22,14 +22,15 @@ test("production build contains the Chinese stock observatory", async () => {
     new URL(`server/ssr/assets/${dashboardAsset}`, distUrl),
     "utf8",
   );
-  assert.match(dashboard, /正在加载中国股票价格观察台/);
+  assert.match(dashboard, /正在加载中国股票与ETF价格观察台/);
+  assert.match(dashboard, /ETF/);
   assert.match(dashboard, /年度最低价与最高价/);
   assert.match(dashboard, /刷新当前图表/);
   assert.match(dashboard, /历史数据尚未就绪/);
   assert.match(dashboard, /当前区间最高价和最低价/);
   assert.match(dashboard, /年度高低点标记/);
   assert.match(dashboard, /区间最高/);
-  assert.match(dashboard, /自选股管理/);
+  assert.match(dashboard, /自选品种管理/);
   assert.match(dashboard, /AKShare/);
   assert.doesNotMatch(dashboard, /Tushare/);
   assert.doesNotMatch(dashboard, /Your site is taking shape/);
