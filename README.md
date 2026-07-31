@@ -22,7 +22,7 @@
 ## 数据来源
 
 - 股票日线历史与每日更新：[AKShare 股票数据](https://akshare.akfamily.xyz/data/stock/stock.html)，优先读取东方财富接口，异常时自动切换新浪接口
-- ETF 日线历史与每日更新：[AKShare ETF 数据](https://akshare.akfamily.xyz/data/fund/fund_public.html)，读取东方财富 ETF 接口
+- ETF 日线历史与每日更新：[AKShare ETF 数据](https://akshare.akfamily.xyz/data/fund/fund_public.html)，优先读取东方财富 ETF 接口，不复权数据异常时切换新浪接口
 - 股票与 ETF 搜索、代码验证：东方财富公开行情接口
 - 网页图表只读取 D1 缓存，不会因访问人数增加而重复调用外部行情源
 - 初次部署离线回退：随应用打包的 9 家银行 7,785 行不复权日线快照
