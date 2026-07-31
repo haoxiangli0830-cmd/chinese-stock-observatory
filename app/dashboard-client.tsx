@@ -8,6 +8,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -26,7 +27,7 @@ interface DashboardPayload {
   stocks: StockRecord[];
   annualRanges: AnnualRange[];
   activity: ActivityItem[];
-  lastSync: string;
+  lastSync: string | null;
   marketStatus: string;
 }
 
@@ -35,6 +36,9 @@ interface PriceSeries {
   points: PricePoint[];
   source: string;
   actualAdjustment?: Adjustment;
+  syncStatus?: StockRecord["syncStatus"];
+  lastSuccessAt?: string | null;
+  error?: string | null;
 }
 
 interface SearchResult {
@@ -43,6 +47,17 @@ interface SearchResult {
   nameZh: string;
   nameEn: string | null;
   source: string;
+}
+
+interface ExtremeValue {
+  date: string;
+  value: number;
+}
+
+interface YearlyExtreme {
+  year: number;
+  high: ExtremeValue;
+  low: ExtremeValue;
 }
 
 const periods: Period[] = ["1M", "6M", "YTD", "1Y", "5Y", "MAX"];
@@ -55,6 +70,24 @@ const periodLabels: Record<Period, string> = {
   MAX: "全部",
 };
 const colors = ["#0A5AA8", "#C53C3C", "#18885C", "#8A5AA8", "#D18A13"];
+const syncLabels: Record<StockRecord["syncStatus"], string> = {
+  pending: "等待同步",
+  syncing: "同步中",
+  ready: "数据就绪",
+  failed: "同步失败",
+};
+
+function highValue(point: PricePoint) {
+  return point.high ?? point.close;
+}
+
+function lowValue(point: PricePoint) {
+  return point.low ?? point.close;
+}
+
+function sameExtreme(left: ExtremeValue, right: ExtremeValue) {
+  return left.date === right.date && left.value === right.value;
+}
 
 function formatDate(value: string | null) {
   if (!value) return "待首次更新";
@@ -83,7 +116,11 @@ function mergeSeries(series: PriceSeries[], comparison: boolean) {
       row[item.symbol] = comparison
         ? Number(((point.close / firstClose) * 100).toFixed(2))
         : point.close;
-      if (!comparison && series.length === 1) row.volume = point.volume ?? 0;
+      if (!comparison && series.length === 1) {
+        row.volume = point.volume ?? 0;
+        row.high = point.high ?? point.close;
+        row.low = point.low ?? point.close;
+      }
       byDate.set(point.date, row);
     });
   });
@@ -107,6 +144,7 @@ export default function DashboardClient() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [yearStart, setYearStart] = useState(2023);
   const [yearEnd, setYearEnd] = useState(new Date().getFullYear());
+  const [watchlistOpen, setWatchlistOpen] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     const response = await fetch("/api/dashboard", { cache: "no-store" });
@@ -143,6 +181,13 @@ export default function DashboardClient() {
         setMessage(
           "前复权日线尚未写入缓存，当前显示不复权历史快照；配置每日同步后会自动切换。",
         );
+      } else if (nextSeries.every((item) => item.points.length === 0)) {
+        const first = nextSeries[0];
+        setMessage(
+          first?.syncStatus === "failed"
+            ? `历史数据同步失败：${first.error ?? "数据源暂时不可用，将自动重试"}`
+            : "历史数据正在排队同步，通常会在30分钟内自动出现。",
+        );
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "读取行情失败");
@@ -169,6 +214,15 @@ export default function DashboardClient() {
     return () => window.clearTimeout(timer);
   }, [loadPrices]);
 
+  useEffect(() => {
+    if (!watchlistOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setWatchlistOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [watchlistOpen]);
+
   const activeStocks = useMemo(
     () => dashboard?.stocks.filter((stock) => stock.active) ?? [],
     [dashboard],
@@ -184,6 +238,53 @@ export default function DashboardClient() {
     () => mergeSeries(series, comparison),
     [comparison, series],
   );
+  const visibleExtremes = useMemo(() => {
+    if (comparison || series.length !== 1 || !series[0]?.points.length) {
+      return null;
+    }
+    const points = series[0].points;
+    const high = points.reduce((best, point) =>
+      highValue(point) > highValue(best) ? point : best,
+    );
+    const low = points.reduce((best, point) =>
+      lowValue(point) < lowValue(best) ? point : best,
+    );
+    return {
+      high: { date: high.date, value: highValue(high) },
+      low: { date: low.date, value: lowValue(low) },
+    };
+  }, [comparison, series]);
+  const yearlyExtremes = useMemo<YearlyExtreme[]>(() => {
+    if (
+      comparison ||
+      !["1Y", "5Y", "MAX"].includes(period) ||
+      series.length !== 1 ||
+      !series[0]?.points.length
+    ) {
+      return [];
+    }
+    const grouped = new Map<number, PricePoint[]>();
+    series[0].points.forEach((point) => {
+      const year = Number(point.date.slice(0, 4));
+      if (!Number.isFinite(year)) return;
+      grouped.set(year, [...(grouped.get(year) ?? []), point]);
+    });
+    return Array.from(grouped.entries())
+      .map(([year, points]) => {
+        const high = points.reduce((best, point) =>
+          highValue(point) > highValue(best) ? point : best,
+        );
+        const low = points.reduce((best, point) =>
+          lowValue(point) < lowValue(best) ? point : best,
+        );
+        return {
+          year,
+          high: { date: high.date, value: highValue(high) },
+          low: { date: low.date, value: lowValue(low) },
+        };
+      })
+      .sort((left, right) => left.year - right.year);
+  }, [comparison, period, series]);
   const visibleYears = useMemo(() => {
     const years = new Set(
       (dashboard?.annualRanges ?? [])
@@ -248,6 +349,7 @@ export default function DashboardClient() {
     setMessage(payload.message ?? "股票已添加");
     setQuery("");
     setSearchResults([]);
+    setWatchlistOpen(true);
     await loadDashboard();
   }
 
@@ -300,6 +402,14 @@ export default function DashboardClient() {
           </div>
         </div>
         <div className="header-actions">
+          <button
+            className="button secondary watchlist-toggle"
+            onClick={() => setWatchlistOpen(true)}
+            type="button"
+            aria-expanded={watchlistOpen}
+          >
+            自选股
+          </button>
           <button
             className="button secondary"
             onClick={() => loadPrices()}
@@ -480,7 +590,7 @@ export default function DashboardClient() {
                   ) : (
                     <ComposedChart
                       data={chartData}
-                      margin={{ top: 16, right: 18, left: 0, bottom: 0 }}
+                      margin={{ top: 34, right: 24, left: 0, bottom: 26 }}
                     >
                       <CartesianGrid stroke="#E7EDF3" vertical={false} />
                       <XAxis
@@ -519,13 +629,146 @@ export default function DashboardClient() {
                         strokeWidth={2.4}
                         connectNulls
                       />
+                      {visibleExtremes &&
+                        yearlyExtremes.map((item) =>
+                          sameExtreme(item.high, visibleExtremes.high) ? null : (
+                            <ReferenceDot
+                              key={`${item.year}-high`}
+                              yAxisId="price"
+                              x={item.high.date}
+                              y={item.high.value}
+                              r={4}
+                              fill="#D96A6A"
+                              stroke="#FFFFFF"
+                              strokeWidth={1.5}
+                              ifOverflow="extendDomain"
+                              label={
+                                period === "MAX"
+                                  ? undefined
+                                  : {
+                                      value: `${item.year}年高 ${item.high.date.slice(5)}`,
+                                      position: "top",
+                                      fill: "#A92F2F",
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                    }
+                              }
+                            />
+                          ),
+                        )}
+                      {visibleExtremes &&
+                        yearlyExtremes.map((item) =>
+                          sameExtreme(item.low, visibleExtremes.low) ? null : (
+                            <ReferenceDot
+                              key={`${item.year}-low`}
+                              yAxisId="price"
+                              x={item.low.date}
+                              y={item.low.value}
+                              r={4}
+                              fill="#49A985"
+                              stroke="#FFFFFF"
+                              strokeWidth={1.5}
+                              ifOverflow="extendDomain"
+                              label={
+                                period === "MAX"
+                                  ? undefined
+                                  : {
+                                      value: `${item.year}年低 ${item.low.date.slice(5)}`,
+                                      position: "bottom",
+                                      fill: "#126447",
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                    }
+                              }
+                            />
+                          ),
+                        )}
+                      {visibleExtremes && (
+                        <>
+                          <ReferenceDot
+                            yAxisId="price"
+                            x={visibleExtremes.high.date}
+                            y={visibleExtremes.high.value}
+                            r={5}
+                            fill="#C33C3C"
+                            stroke="#FFFFFF"
+                            strokeWidth={2}
+                            ifOverflow="extendDomain"
+                            label={{
+                              value: `区间最高 ¥${visibleExtremes.high.value.toFixed(2)} · ${visibleExtremes.high.date}`,
+                              position: "top",
+                              fill: "#A92F2F",
+                              fontSize: 11,
+                              fontWeight: 700,
+                            }}
+                          />
+                          <ReferenceDot
+                            yAxisId="price"
+                            x={visibleExtremes.low.date}
+                            y={visibleExtremes.low.value}
+                            r={5}
+                            fill="#187A58"
+                            stroke="#FFFFFF"
+                            strokeWidth={2}
+                            ifOverflow="extendDomain"
+                            label={{
+                              value: `区间最低 ¥${visibleExtremes.low.value.toFixed(2)} · ${visibleExtremes.low.date}`,
+                              position: "bottom",
+                              fill: "#126447",
+                              fontSize: 11,
+                              fontWeight: 700,
+                            }}
+                          />
+                        </>
+                      )}
                     </ComposedChart>
                   )}
                 </ResponsiveContainer>
               ) : (
-                <div className="chart-empty">暂无可显示的日线数据</div>
+                <div className="chart-empty chart-pending">
+                  <strong>历史数据尚未就绪</strong>
+                  <span>新股票会自动进入同步队列，无需重复添加。</span>
+                </div>
               )}
             </div>
+            {visibleExtremes && (
+              <div className="extreme-summary" aria-label="当前区间最高价和最低价">
+                <span className="high">
+                  <i /> 最高 ¥{visibleExtremes.high.value.toFixed(2)}
+                  <small>{visibleExtremes.high.date}</small>
+                </span>
+                <span className="low">
+                  <i /> 最低 ¥{visibleExtremes.low.value.toFixed(2)}
+                  <small>{visibleExtremes.low.date}</small>
+                </span>
+              </div>
+            )}
+            {yearlyExtremes.length > 0 && (
+              <section
+                className="year-extreme-strip"
+                aria-label="当前图表范围内各年度最高价和最低价"
+              >
+                <div className="year-extreme-heading">
+                  <strong>年度高低点标记</strong>
+                  <span>红点为年度最高，绿点为年度最低；日期均在当前图表范围内计算</span>
+                </div>
+                <div className="year-extreme-grid">
+                  {yearlyExtremes.map((item) => (
+                    <div className="year-extreme-card" key={item.year}>
+                      <strong>{item.year}年</strong>
+                      <span className="high">
+                        最高 ¥{item.high.value.toFixed(2)}
+                        <small>{item.high.date}</small>
+                      </span>
+                      <span className="low">
+                        最低 ¥{item.low.value.toFixed(2)}
+                        <small>{item.low.date}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             <div className="chart-footnote">
               <span>
                 {comparison
@@ -615,7 +858,29 @@ export default function DashboardClient() {
           </article>
         </div>
 
-        <aside className="side-column">
+        {watchlistOpen && (
+          <button
+            className="drawer-backdrop"
+            type="button"
+            aria-label="关闭自选股面板"
+            onClick={() => setWatchlistOpen(false)}
+          />
+        )}
+
+        <aside className={`side-column ${watchlistOpen ? "open" : ""}`}>
+          <div className="drawer-heading">
+            <div>
+              <p className="section-kicker">自选股管理</p>
+              <strong>添加与管理股票</strong>
+            </div>
+            <button
+              type="button"
+              aria-label="关闭自选股面板"
+              onClick={() => setWatchlistOpen(false)}
+            >
+              关闭
+            </button>
+          </div>
           <article className="panel add-panel">
             <p className="section-kicker">公开观察名单</p>
             <h3>添加A股公司</h3>
@@ -686,6 +951,9 @@ export default function DashboardClient() {
                     <small>
                       {stock.symbol} · {stock.exchange}
                     </small>
+                    <small className={`sync-status ${stock.syncStatus}`}>
+                      {syncLabels[stock.syncStatus]}
+                    </small>
                   </span>
                   <span
                     className={stock.category === "银行股" ? "tag bank" : "tag"}
@@ -733,19 +1001,11 @@ export default function DashboardClient() {
         <div>
           <strong>数据说明</strong>
           <p>
-            日线更新以Tushare为主要计划数据源，AKShare/东方财富作为备用；
-            内置历史快照保证初次部署也能查看九家银行。交易所、币种、复权方式、
-            更新时间与延迟状态均保留。
+            日线数据由AKShare在后台定时采集并写入数据库；网页浏览不会重复请求外部行情源。
+            新股票会自动补齐完整历史，当前年份在每个交易日收盘后增量更新。
           </p>
         </div>
         <div className="source-links">
-          <a
-            href="https://tushare.pro/document/1?doc_id=27"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Tushare说明
-          </a>
           <a
             href="https://akshare.akfamily.xyz/data/stock/stock.html"
             target="_blank"

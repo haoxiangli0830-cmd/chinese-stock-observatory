@@ -1,8 +1,6 @@
-import type { Adjustment, Period, PricePoint } from "./types";
+import type { Period, PricePoint } from "./types";
 import fallbackData from "./bank-price-fallback.json";
 
-const EASTMONEY_HISTORY =
-  "https://push2his.eastmoney.com/api/qt/stock/kline/get";
 const EASTMONEY_QUOTE = "https://push2.eastmoney.com/api/qt/stock/get";
 const EASTMONEY_LIST = "https://82.push2.eastmoney.com/api/qt/clist/get";
 const bundledPriceData = fallbackData as Record<
@@ -27,8 +25,8 @@ function isAStockSymbol(value: string) {
 export function periodStart(period: Period) {
   const now = new Date();
   const start = new Date(now);
-  if (period === "MAX") return "19900101";
-  if (period === "YTD") return `${now.getUTCFullYear()}0101`;
+  if (period === "MAX") return "1990-01-01";
+  if (period === "YTD") return `${now.getUTCFullYear()}-01-01`;
   const months =
     period === "1M"
       ? 1
@@ -38,16 +36,15 @@ export function periodStart(period: Period) {
           ? 12
           : 60;
   start.setUTCMonth(start.getUTCMonth() - months);
-  return start.toISOString().slice(0, 10).replaceAll("-", "");
+  return start.toISOString().slice(0, 10);
 }
 
 export function getBundledBankHistory(
   symbol: string,
   startDate: string,
 ): PricePoint[] {
-  const normalizedStart = `${startDate.slice(0, 4)}-${startDate.slice(4, 6)}-${startDate.slice(6, 8)}`;
   return (bundledPriceData[symbol] ?? [])
-    .filter(([date]) => date >= normalizedStart)
+    .filter(([date]) => date >= startDate)
     .map(([date, open, high, low, close, volume]) => ({
       symbol,
       date,
@@ -59,48 +56,6 @@ export function getBundledBankHistory(
       adjustment: "raw",
       source: "内置历史快照（不复权）",
     }));
-}
-
-export async function fetchEastmoneyHistory(
-  symbol: string,
-  adjustment: Adjustment,
-  period: Period,
-): Promise<PricePoint[]> {
-  if (!isAStockSymbol(symbol)) throw new Error("股票代码格式不正确");
-  const params = new URLSearchParams({
-    secid: `${marketId(symbol)}.${symbol}`,
-    fields1: "f1,f2,f3,f4,f5,f6",
-    fields2: "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
-    klt: "101",
-    fqt: adjustment === "qfq" ? "1" : "0",
-    beg: periodStart(period),
-    end: "20500101",
-    lmt: "100000",
-  });
-  const response = await fetch(`${EASTMONEY_HISTORY}?${params}`, {
-    headers: { accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error("行情数据源暂时不可用");
-  const payload = (await response.json()) as {
-    data?: { klines?: string[] } | null;
-  };
-  const rows = payload.data?.klines ?? [];
-  if (!rows.length) throw new Error("未找到该股票的日线数据");
-  return rows.map((line) => {
-    const [date, open, close, high, low, volume] = line.split(",");
-    return {
-      symbol,
-      date,
-      open: Number.isFinite(Number(open)) ? Number(open) : null,
-      high: Number.isFinite(Number(high)) ? Number(high) : null,
-      low: Number.isFinite(Number(low)) ? Number(low) : null,
-      close: Number(close),
-      volume: Number.isFinite(Number(volume)) ? Number(volume) : null,
-      adjustment,
-      source: "东方财富",
-    };
-  });
 }
 
 export async function validateAStock(symbol: string) {

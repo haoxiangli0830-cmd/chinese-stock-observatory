@@ -24,6 +24,7 @@ html {
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 90% -5%, rgba(10, 90, 168, 0.09), transparent 28rem),
     var(--canvas);
@@ -253,11 +254,19 @@ input:focus-visible {
 
 .main-column,
 .side-column {
+  min-width: 0;
   display: grid;
   gap: 18px;
 }
 
+.watchlist-toggle,
+.drawer-heading,
+.drawer-backdrop {
+  display: none;
+}
+
 .panel {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--panel);
@@ -396,6 +405,7 @@ input:focus-visible {
 }
 
 .chart-wrap {
+  min-width: 0;
   height: 390px;
   padding-top: 10px;
 }
@@ -408,6 +418,141 @@ input:focus-visible {
   background: #f8fafc;
   color: var(--muted);
   font-size: 13px;
+}
+
+.chart-pending {
+  align-content: center;
+  justify-items: center;
+  gap: 7px;
+  padding: 24px;
+  text-align: center;
+}
+
+.chart-pending strong {
+  color: var(--blue-dark);
+  font-size: 15px;
+}
+
+.chart-pending span {
+  font-size: 11px;
+}
+
+.extreme-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 0 12px;
+}
+
+.extreme-summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfcfd;
+  padding: 6px 9px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.extreme-summary i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.extreme-summary small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.extreme-summary .high {
+  color: var(--red);
+}
+
+.extreme-summary .high i {
+  background: var(--red);
+}
+
+.extreme-summary .low {
+  color: var(--green);
+}
+
+.extreme-summary .low i {
+  background: var(--green);
+}
+
+.year-extreme-strip {
+  margin: 0 0 14px;
+  border: 1px solid #e8edf2;
+  border-radius: 12px;
+  background: #fbfcfd;
+  padding: 10px;
+}
+
+.year-extreme-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.year-extreme-heading strong {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.year-extreme-heading span {
+  color: var(--muted);
+  font-size: 9px;
+  text-align: right;
+}
+
+.year-extreme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  gap: 7px;
+  max-height: 164px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.year-extreme-card {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9px;
+  background: #ffffff;
+  padding: 7px 8px;
+  box-shadow: inset 0 0 0 1px #edf1f4;
+  font-size: 9px;
+}
+
+.year-extreme-card > strong {
+  color: var(--blue-dark);
+  font-size: 10px;
+}
+
+.year-extreme-card span {
+  display: grid;
+  gap: 2px;
+  font-weight: 700;
+}
+
+.year-extreme-card .high {
+  color: var(--red);
+}
+
+.year-extreme-card .low {
+  color: var(--green);
+}
+
+.year-extreme-card small {
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .chart-footnote {
@@ -635,6 +780,34 @@ input:focus-visible {
   display: block;
 }
 
+.stock-meta .sync-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 5px;
+  border-radius: 999px;
+  padding: 3px 6px;
+  background: #eef2f6;
+  color: #66717e;
+  font-weight: 700;
+}
+
+.stock-meta .sync-status.ready {
+  background: #e8f5ee;
+  color: #126447;
+}
+
+.stock-meta .sync-status.pending,
+.stock-meta .sync-status.syncing {
+  background: #fff4dc;
+  color: #8a5a00;
+}
+
+.stock-meta .sync-status.failed {
+  background: #fdecec;
+  color: #a92f2f;
+}
+
 .stock-meta strong {
   display: block;
   overflow: hidden;
@@ -754,22 +927,86 @@ footer p {
   padding: 8px 10px;
 }
 
+@media (max-width: 1280px) {
+  .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .watchlist-toggle {
+    display: inline-flex;
+  }
+
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: block;
+    border: 0;
+    background: rgba(17, 29, 45, 0.38);
+    backdrop-filter: blur(2px);
+    cursor: pointer;
+  }
+
+  .side-column {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 80;
+    display: block;
+    width: min(390px, 100vw);
+    height: 100dvh;
+    overflow-y: auto;
+    padding: 18px;
+    background: var(--canvas);
+    box-shadow: -18px 0 46px rgba(20, 37, 57, 0.2);
+    transform: translateX(105%);
+    transition: transform 180ms ease;
+  }
+
+  .side-column.open {
+    transform: translateX(0);
+  }
+
+  .side-column .panel {
+    margin-bottom: 18px;
+  }
+
+  .drawer-heading {
+    position: sticky;
+    top: -18px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: -18px -18px 18px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(245, 247, 250, 0.96);
+    padding: 18px;
+    backdrop-filter: blur(10px);
+  }
+
+  .drawer-heading strong {
+    display: block;
+    margin-top: 4px;
+    font-size: 15px;
+  }
+
+  .drawer-heading button {
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: white;
+    color: var(--blue-dark);
+    padding: 7px 10px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+  }
+}
+
 @media (max-width: 1120px) {
   .hero-grid {
     grid-template-columns: 1fr;
     gap: 28px;
-  }
-
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .side-column {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .activity-panel {
-    grid-column: 1 / -1;
   }
 }
 
@@ -781,6 +1018,7 @@ footer p {
   .topbar {
     min-height: 78px;
     align-items: flex-start;
+    flex-wrap: wrap;
     padding: 14px 0;
   }
 
@@ -798,7 +1036,9 @@ footer p {
   }
 
   .header-actions {
+    width: 100%;
     display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
   }
 
@@ -844,12 +1084,29 @@ footer p {
     gap: 4px;
   }
 
-  .side-column {
-    grid-template-columns: 1fr;
+  .year-extreme-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
   }
 
-  .activity-panel {
-    grid-column: auto;
+  .year-extreme-heading span {
+    text-align: left;
+  }
+
+  .year-extreme-card {
+    grid-template-columns: 52px 1fr 1fr;
+  }
+
+  .side-column {
+    width: 100vw;
+    padding: 12px;
+  }
+
+  .drawer-heading {
+    top: -12px;
+    margin: -12px -12px 12px;
+    padding: 14px 12px;
   }
 
   footer {

@@ -19,7 +19,10 @@ export async function POST(request: Request) {
       );
     }
     await saveStock(stock);
-    return Response.json({ stock, message: "股票已加入观察名单" });
+    return Response.json({
+      stock,
+      message: "股票已加入，完整历史数据将在30分钟内自动同步",
+    });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "添加失败" },

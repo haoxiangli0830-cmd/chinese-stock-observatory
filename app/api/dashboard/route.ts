@@ -19,8 +19,8 @@ export async function GET() {
       stocks,
       annualRanges,
       activity,
-      lastSync: lastSync ?? "2026-07-30T12:00:00.000Z",
-      marketStatus: "日终数据",
+      lastSync,
+      marketStatus: "AKShare日终数据",
       currency: "CNY",
       timezone: "Asia/Shanghai",
     });

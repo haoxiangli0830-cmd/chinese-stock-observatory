@@ -1,15 +1,36 @@
-name: 每日A股价格更新
+name: AKShare A股价格更新
 
 on:
   schedule:
-    # 工作日17:30（北京时间）运行，节假日无数据时安全结束。
+    # 每30分钟处理新加入或失败的股票。
+    - cron: "0,30 * * * *"
+    # 工作日17:30（北京时间）增量更新全部启用股票。
     - cron: "30 9 * * 1-5"
+    # 每周日重新获取完整前复权历史，避免除权后旧数据口径不一致。
+    - cron: "0 3 * * 0"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 同步模式
+        required: true
+        default: pending
+        type: choice
+        options:
+          - pending
+          - daily
+          - full-qfq
+
+permissions:
+  contents: read
+
+concurrency:
+  group: akshare-market-sync
+  cancel-in-progress: false
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -23,9 +44,22 @@ jobs:
       - name: 安装数据工具
         run: pip install -r requirements.txt
 
+      - name: 选择同步模式
+        id: mode
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "value=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event.schedule }}" == "30 9 * * 1-5" ]]; then
+            echo "value=daily" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event.schedule }}" == "0 3 * * 0" ]]; then
+            echo "value=full-qfq" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=pending" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 更新日线数据
         env:
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
           SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
-          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
-        run: python scripts/sync_market_data.py
+        run: python scripts/sync_market_data.py --mode "${{ steps.mode.outputs.value }}"

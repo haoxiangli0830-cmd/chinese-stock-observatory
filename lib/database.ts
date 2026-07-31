@@ -5,6 +5,7 @@ import type {
   AnnualRange,
   PricePoint,
   StockRecord,
+  SyncStatus,
 } from "./types";
 
 function getDatabase(): D1Database {
@@ -25,7 +26,10 @@ const createStatements = [
     source TEXT NOT NULL DEFAULT '东方财富',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    last_success_at TEXT
+    last_success_at TEXT,
+    last_attempt_at TEXT,
+    sync_status TEXT NOT NULL DEFAULT 'pending',
+    error_message TEXT
   )`,
   `CREATE TABLE IF NOT EXISTS prices (
     symbol TEXT NOT NULL,
@@ -42,6 +46,8 @@ const createStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS prices_symbol_date_idx
     ON prices (symbol, trade_date)`,
+  `CREATE INDEX IF NOT EXISTS prices_symbol_adjustment_date_idx
+    ON prices (symbol, adjustment, trade_date)`,
   `CREATE TABLE IF NOT EXISTS annual_ranges (
     symbol TEXT NOT NULL,
     year INTEGER NOT NULL,
@@ -69,10 +75,41 @@ const createStatements = [
 
 let initialized = false;
 
+async function ensureStockSyncColumns(db: D1Database) {
+  const result = await db.prepare("PRAGMA table_info(stocks)").all();
+  const columns = new Set(result.results.map((row) => String(row.name)));
+  const additions = [
+    ["last_attempt_at", "ALTER TABLE stocks ADD COLUMN last_attempt_at TEXT"],
+    [
+      "sync_status",
+      "ALTER TABLE stocks ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending'",
+    ],
+    ["error_message", "ALTER TABLE stocks ADD COLUMN error_message TEXT"],
+  ] as const;
+  for (const [column, statement] of additions) {
+    if (columns.has(column)) continue;
+    try {
+      await db.prepare(statement).run();
+    } catch (error) {
+      if (!String(error).toLowerCase().includes("duplicate column name")) {
+        throw error;
+      }
+    }
+  }
+  await db
+    .prepare(
+      `UPDATE stocks
+       SET sync_status = 'ready'
+       WHERE last_success_at IS NOT NULL AND sync_status = 'pending'`,
+    )
+    .run();
+}
+
 export async function ensureDatabase() {
   if (initialized) return;
   const db = getDatabase();
   await db.batch(createStatements.map((statement) => db.prepare(statement)));
+  await ensureStockSyncColumns(db);
 
   await db.batch(
     seedStocks.map((stock) =>
@@ -80,8 +117,9 @@ export async function ensureDatabase() {
         .prepare(
           `INSERT OR IGNORE INTO stocks
           (symbol, exchange, name_zh, name_en, currency, category, active, source,
-           created_at, updated_at, last_success_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           created_at, updated_at, last_success_at, last_attempt_at, sync_status,
+           error_message)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           stock.symbol,
@@ -95,6 +133,9 @@ export async function ensureDatabase() {
           stock.createdAt,
           stock.updatedAt,
           stock.lastSuccessAt,
+          stock.lastAttemptAt,
+          stock.syncStatus,
+          stock.errorMessage,
         ),
     ),
   );
@@ -126,9 +167,14 @@ export async function listStocks(): Promise<StockRecord[]> {
   await ensureDatabase();
   const result = await getDatabase()
     .prepare(
-      `SELECT symbol, exchange, name_zh, name_en, currency, category, active,
-              source, created_at, updated_at, last_success_at
-       FROM stocks
+      `SELECT s.symbol, s.exchange, s.name_zh, s.name_en, s.currency, s.category,
+              s.active, s.source, s.created_at, s.updated_at, s.last_success_at,
+              s.last_attempt_at, s.sync_status, s.error_message,
+              (SELECT MAX(p.trade_date) FROM prices p
+               WHERE p.symbol = s.symbol AND p.adjustment = 'raw') AS last_price_date_raw,
+              (SELECT MAX(p.trade_date) FROM prices p
+               WHERE p.symbol = s.symbol AND p.adjustment = 'qfq') AS last_price_date_qfq
+       FROM stocks s
        ORDER BY active DESC, category ASC, symbol ASC`,
     )
     .all();
@@ -145,6 +191,15 @@ export async function listStocks(): Promise<StockRecord[]> {
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
     lastSuccessAt: row.last_success_at ? String(row.last_success_at) : null,
+    lastAttemptAt: row.last_attempt_at ? String(row.last_attempt_at) : null,
+    syncStatus: String(row.sync_status ?? "pending") as SyncStatus,
+    errorMessage: row.error_message ? String(row.error_message) : null,
+    lastPriceDateRaw: row.last_price_date_raw
+      ? String(row.last_price_date_raw)
+      : null,
+    lastPriceDateQfq: row.last_price_date_qfq
+      ? String(row.last_price_date_qfq)
+      : null,
   }));
 }
 
@@ -211,13 +266,22 @@ export async function saveStock(stock: {
       .prepare(
         `INSERT INTO stocks
         (symbol, exchange, name_zh, name_en, currency, category, active, source,
-         created_at, updated_at, last_success_at)
-        VALUES (?, ?, ?, ?, 'CNY', '自选股', 1, ?, ?, ?, NULL)
+         created_at, updated_at, last_success_at, last_attempt_at, sync_status,
+         error_message)
+        VALUES (?, ?, ?, ?, 'CNY', '自选股', 1, ?, ?, ?, NULL, NULL, 'pending', NULL)
         ON CONFLICT(symbol) DO UPDATE SET
           name_zh = excluded.name_zh,
           exchange = excluded.exchange,
           active = 1,
           source = excluded.source,
+          sync_status = CASE
+            WHEN stocks.last_success_at IS NULL THEN 'pending'
+            ELSE stocks.sync_status
+          END,
+          error_message = CASE
+            WHEN stocks.last_success_at IS NULL THEN NULL
+            ELSE stocks.error_message
+          END,
           updated_at = excluded.updated_at`,
       )
       .bind(
@@ -250,9 +314,20 @@ export async function setStockActive(symbol: string, active: boolean) {
   await db.batch([
     db
       .prepare(
-        "UPDATE stocks SET active = ?, updated_at = ? WHERE symbol = ?",
+        `UPDATE stocks
+         SET active = ?,
+             sync_status = CASE
+               WHEN ? = 1 AND last_success_at IS NULL THEN 'pending'
+               ELSE sync_status
+             END,
+             error_message = CASE
+               WHEN ? = 1 AND last_success_at IS NULL THEN NULL
+               ELSE error_message
+             END,
+             updated_at = ?
+         WHERE symbol = ?`,
       )
-      .bind(active ? 1 : 0, now, symbol),
+      .bind(active ? 1 : 0, active ? 1 : 0, active ? 1 : 0, now, symbol),
     db
       .prepare(
         `INSERT INTO activity_log (action, symbol, message, created_at)
@@ -369,34 +444,138 @@ export async function upsertAnnualRanges(rows: AnnualRange[]) {
   }
 }
 
-export async function markSyncComplete(symbols: string[], source: string) {
+export async function rebuildAnnualRanges(symbols: string[]) {
+  if (!symbols.length) return;
   await ensureDatabase();
   const db = getDatabase();
   const now = new Date().toISOString();
-  const statements = symbols.map((symbol) =>
-    db
+  for (const symbol of symbols) {
+    const result = await db
       .prepare(
-        "UPDATE stocks SET last_success_at = ?, source = ?, updated_at = ? WHERE symbol = ?",
+        `SELECT trade_date, low, high, source
+         FROM prices
+         WHERE symbol = ? AND adjustment = 'raw'
+           AND low IS NOT NULL AND high IS NOT NULL
+         ORDER BY trade_date ASC`,
       )
-      .bind(now, source, now, symbol),
+      .bind(symbol)
+      .all();
+    const grouped = new Map<number, AnnualRange>();
+    for (const row of result.results) {
+      const tradeDate = String(row.trade_date);
+      const year = Number(tradeDate.slice(0, 4));
+      const low = Number(row.low);
+      const high = Number(row.high);
+      const existing = grouped.get(year);
+      if (!existing) {
+        grouped.set(year, {
+          symbol,
+          year,
+          low,
+          high,
+          lowDate: tradeDate,
+          highDate: tradeDate,
+          source: String(row.source),
+          updatedAt: now,
+        });
+        continue;
+      }
+      if (low < existing.low) {
+        existing.low = low;
+        existing.lowDate = tradeDate;
+      }
+      if (high > existing.high) {
+        existing.high = high;
+        existing.highDate = tradeDate;
+      }
+      existing.source = String(row.source);
+      existing.updatedAt = now;
+    }
+    await upsertAnnualRanges(Array.from(grouped.values()));
+  }
+}
+
+export async function markSyncStarted(symbols: string[]) {
+  if (!symbols.length) return;
+  await ensureDatabase();
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  await db.batch(
+    symbols.map((symbol) =>
+      db
+        .prepare(
+          `UPDATE stocks
+           SET sync_status = 'syncing', last_attempt_at = ?, error_message = NULL,
+               updated_at = ?
+           WHERE symbol = ?`,
+        )
+        .bind(now, now, symbol),
+    ),
   );
-  statements.push(
-    db
-      .prepare(
-        `INSERT INTO sync_state (key, value, updated_at)
-         VALUES ('last_complete_sync', ?, ?)
-         ON CONFLICT(key) DO UPDATE SET
-           value = excluded.value, updated_at = excluded.updated_at`,
-      )
-      .bind(now, now),
+}
+
+export async function markSyncResults(
+  results: Array<{
+    symbol: string;
+    ok: boolean;
+    source?: string;
+    error?: string;
+  }>,
+) {
+  if (!results.length) return;
+  await ensureDatabase();
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const statements = results.map((result) =>
+    result.ok
+      ? db
+          .prepare(
+            `UPDATE stocks
+             SET last_success_at = ?, last_attempt_at = ?, sync_status = 'ready',
+                 error_message = NULL, source = ?, updated_at = ?
+             WHERE symbol = ?`,
+          )
+          .bind(now, now, result.source ?? "AKShare", now, result.symbol)
+      : db
+          .prepare(
+            `UPDATE stocks
+             SET last_attempt_at = ?, sync_status = 'failed', error_message = ?,
+                 updated_at = ?
+             WHERE symbol = ?`,
+          )
+          .bind(
+            now,
+            String(result.error ?? "AKShare 暂时未返回数据").slice(0, 300),
+            now,
+            result.symbol,
+          ),
   );
+  const successCount = results.filter((result) => result.ok).length;
+  const failureCount = results.length - successCount;
+  if (successCount) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO sync_state (key, value, updated_at)
+           VALUES ('last_complete_sync', ?, ?)
+           ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value, updated_at = excluded.updated_at`,
+        )
+        .bind(now, now),
+    );
+  }
   statements.push(
     db
       .prepare(
         `INSERT INTO activity_log (action, symbol, message, created_at)
          VALUES ('更新', NULL, ?, ?)`,
       )
-      .bind(`已完成 ${symbols.length} 只股票的日线更新`, now),
+      .bind(
+        failureCount
+          ? `同步完成 ${successCount} 只，失败 ${failureCount} 只`
+          : `已完成 ${successCount} 只股票的日线更新`,
+        now,
+      ),
   );
   await db.batch(statements);
 }

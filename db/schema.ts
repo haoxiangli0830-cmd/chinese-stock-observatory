@@ -19,6 +19,9 @@ export const stocks = sqliteTable("stocks", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   lastSuccessAt: text("last_success_at"),
+  lastAttemptAt: text("last_attempt_at"),
+  syncStatus: text("sync_status").notNull().default("pending"),
+  errorMessage: text("error_message"),
 });
 
 export const prices = sqliteTable(
@@ -40,6 +43,11 @@ export const prices = sqliteTable(
       columns: [table.symbol, table.tradeDate, table.adjustment],
     }),
     index("prices_symbol_date_idx").on(table.symbol, table.tradeDate),
+    index("prices_symbol_adjustment_date_idx").on(
+      table.symbol,
+      table.adjustment,
+      table.tradeDate,
+    ),
   ],
 );
 
