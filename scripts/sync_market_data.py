@@ -15,6 +15,7 @@ FULL_START_DATE = "19900101"
 BATCH_SIZE = 450
 SOURCE_NAME = "AKShare/东方财富"
 ETF_SOURCE_NAME = "AKShare/东方财富ETF"
+ETF_FALLBACK_SOURCE_NAME = "AKShare/新浪ETF"
 FALLBACK_SOURCE_NAME = "AKShare/新浪"
 
 
@@ -146,7 +147,37 @@ def fetch_akshare_range(
                 last_error = exc
                 if attempt < 2:
                     time.sleep(2**attempt)
-        raise RuntimeError(f"AKShare ETF provider failed: {last_error}")
+        primary_error = last_error
+        if adjustment == "raw":
+            for attempt in range(2):
+                try:
+                    frame = ak.fund_etf_hist_sina(symbol=market_symbol(symbol))
+                    rows = normalize_history_rows(
+                        frame,
+                        symbol,
+                        adjustment,
+                        ETF_FALLBACK_SOURCE_NAME,
+                    )
+                    lower = datetime.strptime(start_date, "%Y%m%d").strftime(
+                        "%Y-%m-%d"
+                    )
+                    upper = datetime.strptime(end_date, "%Y%m%d").strftime(
+                        "%Y-%m-%d"
+                    )
+                    filtered = [
+                        row for row in rows if lower <= row["date"] <= upper
+                    ]
+                    if not filtered:
+                        raise RuntimeError("Sina returned no ETF rows in range")
+                    return filtered
+                except Exception as exc:  # independent AKShare/Sina fallback
+                    last_error = exc
+                    if attempt == 0:
+                        time.sleep(2)
+        raise RuntimeError(
+            "AKShare ETF providers failed: "
+            f"Eastmoney={primary_error}; Sina={last_error}"
+        )
 
     for attempt in range(3):
         try:
@@ -209,7 +240,10 @@ def selected_stocks(
             for stock in stocks
             if stock.get("syncStatus") in {"pending", "failed"}
             or not stock.get("lastPriceDateRaw")
-            or not stock.get("lastPriceDateQfq")
+            or (
+                stock.get("instrumentType", "stock") == "stock"
+                and not stock.get("lastPriceDateQfq")
+            )
         ]
     if mode == "full-qfq":
         return [stock for stock in stocks if stock.get("syncStatus") == "ready"]
@@ -239,7 +273,13 @@ def sync_one_stock(
     instrument_type = stock.get("instrumentType", "stock")
     post_sync(base_url, secret, {"startedSymbols": [symbol]})
     end_date = date.today().strftime("%Y%m%d")
-    adjustments = ("qfq",) if mode == "full-qfq" else ("raw", "qfq")
+    adjustments = (
+        ("qfq",)
+        if mode == "full-qfq"
+        else ("raw",)
+        if instrument_type == "etf"
+        else ("raw", "qfq")
+    )
     try:
         all_rows: list[dict[str, Any]] = []
         for adjustment in adjustments:
