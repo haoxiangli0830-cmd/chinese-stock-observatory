@@ -49,6 +49,17 @@ interface SearchResult {
   source: string;
 }
 
+interface ExtremeValue {
+  date: string;
+  value: number;
+}
+
+interface YearlyExtreme {
+  year: number;
+  high: ExtremeValue;
+  low: ExtremeValue;
+}
+
 const periods: Period[] = ["1M", "6M", "YTD", "1Y", "5Y", "MAX"];
 const periodLabels: Record<Period, string> = {
   "1M": "1个月",
@@ -65,6 +76,18 @@ const syncLabels: Record<StockRecord["syncStatus"], string> = {
   ready: "数据就绪",
   failed: "同步失败",
 };
+
+function highValue(point: PricePoint) {
+  return point.high ?? point.close;
+}
+
+function lowValue(point: PricePoint) {
+  return point.low ?? point.close;
+}
+
+function sameExtreme(left: ExtremeValue, right: ExtremeValue) {
+  return left.date === right.date && left.value === right.value;
+}
 
 function formatDate(value: string | null) {
   if (!value) return "待首次更新";
@@ -221,16 +244,47 @@ export default function DashboardClient() {
     }
     const points = series[0].points;
     const high = points.reduce((best, point) =>
-      (point.high ?? point.close) > (best.high ?? best.close) ? point : best,
+      highValue(point) > highValue(best) ? point : best,
     );
     const low = points.reduce((best, point) =>
-      (point.low ?? point.close) < (best.low ?? best.close) ? point : best,
+      lowValue(point) < lowValue(best) ? point : best,
     );
     return {
-      high: { date: high.date, value: high.high ?? high.close },
-      low: { date: low.date, value: low.low ?? low.close },
+      high: { date: high.date, value: highValue(high) },
+      low: { date: low.date, value: lowValue(low) },
     };
   }, [comparison, series]);
+  const yearlyExtremes = useMemo<YearlyExtreme[]>(() => {
+    if (
+      comparison ||
+      !["1Y", "5Y", "MAX"].includes(period) ||
+      series.length !== 1 ||
+      !series[0]?.points.length
+    ) {
+      return [];
+    }
+    const grouped = new Map<number, PricePoint[]>();
+    series[0].points.forEach((point) => {
+      const year = Number(point.date.slice(0, 4));
+      if (!Number.isFinite(year)) return;
+      grouped.set(year, [...(grouped.get(year) ?? []), point]);
+    });
+    return Array.from(grouped.entries())
+      .map(([year, points]) => {
+        const high = points.reduce((best, point) =>
+          highValue(point) > highValue(best) ? point : best,
+        );
+        const low = points.reduce((best, point) =>
+          lowValue(point) < lowValue(best) ? point : best,
+        );
+        return {
+          year,
+          high: { date: high.date, value: highValue(high) },
+          low: { date: low.date, value: lowValue(low) },
+        };
+      })
+      .sort((left, right) => left.year - right.year);
+  }, [comparison, period, series]);
   const visibleYears = useMemo(() => {
     const years = new Set(
       (dashboard?.annualRanges ?? [])
@@ -536,7 +590,7 @@ export default function DashboardClient() {
                   ) : (
                     <ComposedChart
                       data={chartData}
-                      margin={{ top: 16, right: 18, left: 0, bottom: 0 }}
+                      margin={{ top: 34, right: 24, left: 0, bottom: 26 }}
                     >
                       <CartesianGrid stroke="#E7EDF3" vertical={false} />
                       <XAxis
@@ -575,6 +629,60 @@ export default function DashboardClient() {
                         strokeWidth={2.4}
                         connectNulls
                       />
+                      {visibleExtremes &&
+                        yearlyExtremes.map((item) =>
+                          sameExtreme(item.high, visibleExtremes.high) ? null : (
+                            <ReferenceDot
+                              key={`${item.year}-high`}
+                              yAxisId="price"
+                              x={item.high.date}
+                              y={item.high.value}
+                              r={4}
+                              fill="#D96A6A"
+                              stroke="#FFFFFF"
+                              strokeWidth={1.5}
+                              ifOverflow="extendDomain"
+                              label={
+                                period === "MAX"
+                                  ? undefined
+                                  : {
+                                      value: `${item.year}年高 ${item.high.date.slice(5)}`,
+                                      position: "top",
+                                      fill: "#A92F2F",
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                    }
+                              }
+                            />
+                          ),
+                        )}
+                      {visibleExtremes &&
+                        yearlyExtremes.map((item) =>
+                          sameExtreme(item.low, visibleExtremes.low) ? null : (
+                            <ReferenceDot
+                              key={`${item.year}-low`}
+                              yAxisId="price"
+                              x={item.low.date}
+                              y={item.low.value}
+                              r={4}
+                              fill="#49A985"
+                              stroke="#FFFFFF"
+                              strokeWidth={1.5}
+                              ifOverflow="extendDomain"
+                              label={
+                                period === "MAX"
+                                  ? undefined
+                                  : {
+                                      value: `${item.year}年低 ${item.low.date.slice(5)}`,
+                                      position: "bottom",
+                                      fill: "#126447",
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                    }
+                              }
+                            />
+                          ),
+                        )}
                       {visibleExtremes && (
                         <>
                           <ReferenceDot
@@ -587,7 +695,7 @@ export default function DashboardClient() {
                             strokeWidth={2}
                             ifOverflow="extendDomain"
                             label={{
-                              value: `最高 ¥${visibleExtremes.high.value.toFixed(2)}`,
+                              value: `区间最高 ¥${visibleExtremes.high.value.toFixed(2)} · ${visibleExtremes.high.date}`,
                               position: "top",
                               fill: "#A92F2F",
                               fontSize: 11,
@@ -604,7 +712,7 @@ export default function DashboardClient() {
                             strokeWidth={2}
                             ifOverflow="extendDomain"
                             label={{
-                              value: `最低 ¥${visibleExtremes.low.value.toFixed(2)}`,
+                              value: `区间最低 ¥${visibleExtremes.low.value.toFixed(2)} · ${visibleExtremes.low.date}`,
                               position: "bottom",
                               fill: "#126447",
                               fontSize: 11,
@@ -634,6 +742,32 @@ export default function DashboardClient() {
                   <small>{visibleExtremes.low.date}</small>
                 </span>
               </div>
+            )}
+            {yearlyExtremes.length > 0 && (
+              <section
+                className="year-extreme-strip"
+                aria-label="当前图表范围内各年度最高价和最低价"
+              >
+                <div className="year-extreme-heading">
+                  <strong>年度高低点标记</strong>
+                  <span>红点为年度最高，绿点为年度最低；日期均在当前图表范围内计算</span>
+                </div>
+                <div className="year-extreme-grid">
+                  {yearlyExtremes.map((item) => (
+                    <div className="year-extreme-card" key={item.year}>
+                      <strong>{item.year}年</strong>
+                      <span className="high">
+                        最高 ¥{item.high.value.toFixed(2)}
+                        <small>{item.high.date}</small>
+                      </span>
+                      <span className="low">
+                        最低 ¥{item.low.value.toFixed(2)}
+                        <small>{item.low.date}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
             <div className="chart-footnote">
               <span>

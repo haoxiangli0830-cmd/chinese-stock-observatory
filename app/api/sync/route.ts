@@ -10,10 +10,12 @@ import type { PricePoint } from "../../../lib/types";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const configuredSecret = (env as unknown as { SYNC_SECRET?: string })
+  const runtimeSecret = (env as unknown as { SYNC_SECRET?: string })
     .SYNC_SECRET;
-  const authorization = request.headers.get("authorization");
-  if (!configuredSecret || authorization !== `Bearer ${configuredSecret}`) {
+  const configuredSecret = (runtimeSecret ?? process.env.SYNC_SECRET ?? "").trim();
+  const authorization = request.headers.get("authorization") ?? "";
+  const suppliedSecret = authorization.replace(/^Bearer\s+/i, "").trim();
+  if (!configuredSecret || suppliedSecret !== configuredSecret) {
     return Response.json({ error: "未授权的同步请求" }, { status: 401 });
   }
 

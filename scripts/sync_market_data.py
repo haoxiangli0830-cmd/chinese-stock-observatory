@@ -14,6 +14,7 @@ import requests
 FULL_START_DATE = "19900101"
 BATCH_SIZE = 450
 SOURCE_NAME = "AKShare/东方财富"
+FALLBACK_SOURCE_NAME = "AKShare/新浪"
 
 
 def required_env(name: str) -> str:
@@ -73,6 +74,46 @@ def normalize_date(value: Any) -> str:
     return str(value)[:10]
 
 
+def market_symbol(symbol: str) -> str:
+    if symbol.startswith(("4", "8", "92")):
+        return f"bj{symbol}"
+    if symbol.startswith(("5", "6", "9")):
+        return f"sh{symbol}"
+    return f"sz{symbol}"
+
+
+def normalize_history_rows(
+    frame: Any,
+    symbol: str,
+    adjustment: str,
+    source: str,
+) -> list[dict[str, Any]]:
+    if frame is None or frame.empty:
+        raise RuntimeError(f"{source} returned no daily rows")
+    rows: list[dict[str, Any]] = []
+    for record in frame.to_dict("records"):
+        close = finite_number(
+            record.get("收盘", record.get("close")),
+            required=True,
+        )
+        rows.append(
+            {
+                "symbol": symbol,
+                "date": normalize_date(record.get("日期", record.get("date"))),
+                "open": finite_number(record.get("开盘", record.get("open"))),
+                "high": finite_number(record.get("最高", record.get("high"))),
+                "low": finite_number(record.get("最低", record.get("low"))),
+                "close": close,
+                "volume": finite_number(
+                    record.get("成交量", record.get("volume"))
+                ),
+                "adjustment": adjustment,
+                "source": source,
+            }
+        )
+    return rows
+
+
 def fetch_akshare_range(
     symbol: str,
     adjustment: str,
@@ -93,30 +134,39 @@ def fetch_akshare_range(
                 adjust=adjust_value,
                 timeout=30,
             )
-            if frame is None or frame.empty:
-                raise RuntimeError("AKShare returned no daily rows")
-            rows: list[dict[str, Any]] = []
-            for record in frame.to_dict("records"):
-                close = finite_number(record.get("收盘"), required=True)
-                rows.append(
-                    {
-                        "symbol": symbol,
-                        "date": normalize_date(record.get("日期")),
-                        "open": finite_number(record.get("开盘")),
-                        "high": finite_number(record.get("最高")),
-                        "low": finite_number(record.get("最低")),
-                        "close": close,
-                        "volume": finite_number(record.get("成交量")),
-                        "adjustment": adjustment,
-                        "source": SOURCE_NAME,
-                    }
-                )
-            return rows
+            return normalize_history_rows(
+                frame,
+                symbol,
+                adjustment,
+                SOURCE_NAME,
+            )
         except Exception as exc:  # upstream public endpoints can be intermittent
             last_error = exc
             if attempt < 2:
                 time.sleep(2**attempt)
-    raise RuntimeError(f"AKShare failed after 3 attempts: {last_error}")
+    primary_error = last_error
+    for attempt in range(2):
+        try:
+            frame = ak.stock_zh_a_daily(
+                symbol=market_symbol(symbol),
+                start_date=start_date,
+                end_date=end_date,
+                adjust=adjust_value,
+            )
+            return normalize_history_rows(
+                frame,
+                symbol,
+                adjustment,
+                FALLBACK_SOURCE_NAME,
+            )
+        except Exception as exc:  # independent AKShare/Sina fallback
+            last_error = exc
+            if attempt == 0:
+                time.sleep(2)
+    raise RuntimeError(
+        "AKShare providers failed: "
+        f"Eastmoney={primary_error}; Sina={last_error}"
+    )
 
 
 def incremental_start(last_price_date: str | None) -> str:
@@ -183,6 +233,8 @@ def sync_one_stock(
             all_rows.extend(rows)
 
         row_batches = list(chunks(all_rows, BATCH_SIZE)) or [[]]
+        sources_used = sorted({str(row["source"]) for row in all_rows})
+        result_source = " + ".join(sources_used) or SOURCE_NAME
         for index, batch in enumerate(row_batches):
             is_final = index == len(row_batches) - 1
             payload: dict[str, Any] = {"prices": batch}
@@ -191,7 +243,7 @@ def sync_one_stock(
                     {
                         "symbol": symbol,
                         "ok": True,
-                        "source": SOURCE_NAME,
+                        "source": result_source,
                     }
                 ]
             post_sync(base_url, secret, payload)
