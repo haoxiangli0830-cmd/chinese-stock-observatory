@@ -22,6 +22,13 @@
       "when": 1785585600000,
       "tag": "0002_instrument_type_etf",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785677117456,
+      "tag": "0003_chief_eternity",
+      "breakpoints": true
     }
   ]
 }

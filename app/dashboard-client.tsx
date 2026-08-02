@@ -23,6 +23,7 @@ import type {
   PricePoint,
   StockRecord,
 } from "../lib/types";
+import PerformanceRanking from "./performance-ranking";
 
 interface DashboardPayload {
   stocks: StockRecord[];
@@ -431,6 +432,9 @@ export default function DashboardClient() {
           </div>
         </div>
         <div className="header-actions">
+          <a className="button secondary" href="/portfolio">
+            我的投资
+          </a>
           <button
             className="button secondary watchlist-toggle"
             onClick={() => setWatchlistOpen(true)}
@@ -825,6 +829,8 @@ export default function DashboardClient() {
               <span>数据可能延迟，仅供研究参考</span>
             </div>
           </article>
+
+          <PerformanceRanking />
 
           <article className="panel annual-panel">
             <div className="panel-heading">

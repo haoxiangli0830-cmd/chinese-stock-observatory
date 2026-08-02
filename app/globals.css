@@ -34,7 +34,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -45,7 +47,9 @@ a {
 
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid rgba(10, 90, 168, 0.25);
   outline-offset: 2px;
 }
@@ -91,6 +95,11 @@ input:focus-visible {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+.brand-link {
+  color: inherit;
+  text-decoration: none;
 }
 
 .brand h1 {
@@ -939,6 +948,293 @@ footer p {
   padding: 8px 10px;
 }
 
+.panel-description {
+  max-width: 680px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.performance-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ranking-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  border-top: 1px solid #edf1f5;
+  padding-top: 10px;
+}
+
+.sort-direction,
+.text-button {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: var(--blue-dark);
+  padding: 7px 11px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.empty-state {
+  margin-top: 18px;
+  border: 1px dashed #c9d6e2;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 28px 16px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.error-state,
+.notice-error {
+  border-color: #efc6c6;
+  background: #fff4f4;
+  color: #8e2929;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.data-table th,
+.data-table td {
+  border-right: 1px solid #e4ebf1;
+  border-bottom: 1px solid #e4ebf1;
+  padding: 10px 9px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.data-table thead th {
+  background: var(--blue-dark);
+  color: white;
+  font-weight: 700;
+}
+
+.data-table thead th.active-rank {
+  background: #0d68bb;
+}
+
+.data-table td:nth-child(2),
+.data-table th:nth-child(2) {
+  text-align: left;
+}
+
+.data-table td strong,
+.data-table td small {
+  display: block;
+}
+
+.data-table td small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.performance-table {
+  min-width: 940px;
+}
+
+.rank-cell {
+  color: var(--blue-dark);
+  font-weight: 800;
+  text-align: center !important;
+}
+
+.positive {
+  color: var(--red) !important;
+  font-weight: 700;
+}
+
+.negative {
+  color: var(--green) !important;
+  font-weight: 700;
+}
+
+.neutral {
+  color: var(--muted) !important;
+}
+
+.stale-row {
+  background: #fafafa;
+  opacity: 0.72;
+}
+
+.portfolio-shell {
+  max-width: 1480px;
+}
+
+.signed-in-user {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-hero {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.72fr) minmax(680px, 1.28fr);
+  gap: 38px;
+  align-items: center;
+  padding: 40px 0 28px;
+}
+
+.portfolio-hero h2 {
+  margin: 16px 0 10px;
+  font-family: "Songti SC", SimSun, serif;
+  font-size: clamp(32px, 3vw, 48px);
+  line-height: 1.1;
+}
+
+.portfolio-hero > div > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.portfolio-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.portfolio-metrics article {
+  min-height: 118px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: white;
+  padding: 15px;
+  box-shadow: 0 9px 28px rgba(53, 76, 102, 0.05);
+}
+
+.portfolio-metrics span,
+.portfolio-metrics small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.portfolio-metrics strong {
+  color: var(--blue-dark);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(18px, 2vw, 27px);
+}
+
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.investment-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px 10px;
+  margin-top: 18px;
+}
+
+.investment-form label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.investment-form input,
+.investment-form select,
+.investment-form textarea {
+  width: 100%;
+  margin-top: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: var(--ink);
+  padding: 10px;
+  font-size: 12px;
+}
+
+.investment-form textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.field-span-2 {
+  grid-column: 1 / -1;
+}
+
+.investment-form .button {
+  width: 100%;
+}
+
+.investment-form .button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.position-table {
+  min-width: 920px;
+}
+
+.lot-panel {
+  margin-top: 18px;
+}
+
+.lot-table {
+  min-width: 1120px;
+}
+
+.note-cell {
+  max-width: 210px;
+  overflow: hidden;
+  text-align: left !important;
+  text-overflow: ellipsis;
+}
+
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.row-actions button {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  color: var(--blue-dark);
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.row-actions button.danger {
+  border-color: #efcece;
+  color: #9b2f2f;
+}
+
+.privacy-note {
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+}
+
 @media (max-width: 1280px) {
   .content-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -1020,6 +1316,11 @@ footer p {
     grid-template-columns: 1fr;
     gap: 28px;
   }
+
+  .portfolio-hero,
+  .portfolio-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1050,7 +1351,7 @@ footer p {
   .header-actions {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
 
@@ -1082,9 +1383,31 @@ footer p {
   }
 
   .panel-heading,
-  .chart-toolbar {
+  .chart-toolbar,
+  .performance-heading,
+  .ranking-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .performance-controls {
+    justify-content: flex-start;
+  }
+
+  .portfolio-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .investment-form {
+    grid-template-columns: 1fr;
+  }
+
+  .field-span-2 {
+    grid-column: auto;
+  }
+
+  .signed-in-user {
+    grid-column: 1 / -1;
   }
 
   .panel-controls {

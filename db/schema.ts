@@ -84,3 +84,29 @@ export const syncState = sqliteTable("sync_state", {
   value: text("value").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const investmentLots = sqliteTable(
+  "investment_lots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: text("user_id").notNull(),
+    symbol: text("symbol").notNull(),
+    investedAmount: real("invested_amount").notNull(),
+    entryPrice: real("entry_price").notNull(),
+    fees: real("fees").notNull().default(0),
+    investedAt: text("invested_at").notNull(),
+    note: text("note"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("investment_lots_user_date_idx").on(
+      table.userId,
+      table.investedAt,
+    ),
+    index("investment_lots_user_symbol_idx").on(
+      table.userId,
+      table.symbol,
+    ),
+  ],
+);

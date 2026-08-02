@@ -53,3 +53,66 @@ export interface ActivityItem {
   message: string;
   createdAt: string;
 }
+
+export interface PerformanceRow {
+  symbol: string;
+  nameZh: string;
+  instrumentType: InstrumentType;
+  currency: string;
+  latestPrice: number;
+  latestDate: string;
+  actualAdjustment: Adjustment;
+  oneMonthReturn: number | null;
+  sixMonthReturn: number | null;
+  oneYearReturn: number | null;
+  distanceFromOneYearHigh: number | null;
+  stale: boolean;
+}
+
+export interface InvestmentLot {
+  id: number;
+  symbol: string;
+  nameZh: string;
+  instrumentType: InstrumentType;
+  investedAmount: number;
+  entryPrice: number;
+  fees: number;
+  quantity: number;
+  investedAt: string;
+  note: string | null;
+  currentPrice: number | null;
+  currentPriceDate: string | null;
+  currentValue: number | null;
+  unrealizedPnl: number | null;
+  returnPct: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PortfolioPosition {
+  symbol: string;
+  nameZh: string;
+  instrumentType: InstrumentType;
+  totalInvested: number;
+  totalFees: number;
+  totalCost: number;
+  totalQuantity: number;
+  averageEntryPrice: number;
+  currentPrice: number | null;
+  currentPriceDate: string | null;
+  currentValue: number | null;
+  unrealizedPnl: number | null;
+  returnPct: number | null;
+  firstInvestedAt: string;
+  lotCount: number;
+}
+
+export interface PortfolioSummary {
+  totalInvested: number;
+  totalFees: number;
+  totalCost: number;
+  currentValue: number;
+  unrealizedPnl: number;
+  returnPct: number | null;
+  positionCount: number;
+}

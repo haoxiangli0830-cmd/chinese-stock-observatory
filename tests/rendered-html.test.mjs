@@ -9,6 +9,8 @@ test("production build contains the Chinese stock observatory", async () => {
   assert.match(worker, /中国股票与ETF价格观察台/);
   assert.match(worker, /\/api\/dashboard/);
   assert.match(worker, /\/api\/prices/);
+  assert.match(worker, /\/api\/performance/);
+  assert.match(worker, /\/api\/portfolio/);
   assert.match(worker, /\/api\/export/);
 
   const assetDirectory = new URL("server/ssr/assets/", distUrl);
@@ -26,6 +28,8 @@ test("production build contains the Chinese stock observatory", async () => {
   assert.match(dashboard, /ETF/);
   assert.match(dashboard, /年度最低价与最高价/);
   assert.match(dashboard, /刷新当前图表/);
+  assert.match(dashboard, /证券表现排名/);
+  assert.match(dashboard, /我的投资/);
   assert.match(dashboard, /历史数据尚未就绪/);
   assert.match(dashboard, /当前区间最高价和最低价/);
   assert.match(dashboard, /年度高低点标记/);

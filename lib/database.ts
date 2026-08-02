@@ -3,10 +3,28 @@ import { seedAnnualRanges, seedInstruments } from "./seed-data";
 import type {
   ActivityItem,
   AnnualRange,
+  InvestmentLot,
+  PortfolioPosition,
+  PortfolioSummary,
   PricePoint,
   StockRecord,
   SyncStatus,
 } from "./types";
+
+export interface InvestmentLotInput {
+  symbol: string;
+  investedAmount: number;
+  entryPrice: number;
+  fees: number;
+  investedAt: string;
+  note: string | null;
+}
+
+export interface PortfolioSnapshot {
+  lots: InvestmentLot[];
+  positions: PortfolioPosition[];
+  summary: PortfolioSummary;
+}
 
 function getDatabase(): D1Database {
   const database = (env as unknown as { DB?: D1Database }).DB;
@@ -72,6 +90,22 @@ const createStatements = [
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS investment_lots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    invested_amount REAL NOT NULL,
+    entry_price REAL NOT NULL,
+    fees REAL NOT NULL DEFAULT 0,
+    invested_at TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS investment_lots_user_date_idx
+    ON investment_lots (user_id, invested_at)`,
+  `CREATE INDEX IF NOT EXISTS investment_lots_user_symbol_idx
+    ON investment_lots (user_id, symbol)`,
 ];
 
 let initialized = false;
@@ -385,6 +419,254 @@ export async function queryStoredPrices(
     adjustment: String(row.adjustment) as "raw" | "qfq",
     source: String(row.source),
   }));
+}
+
+export async function queryRecentActivePrices(
+  adjustment: string,
+  startDate: string,
+): Promise<PricePoint[]> {
+  await ensureDatabase();
+  const result = await getDatabase()
+    .prepare(
+      `SELECT p.symbol, p.trade_date, p.open, p.high, p.low, p.close, p.volume,
+              p.adjustment, p.source
+       FROM prices p
+       INNER JOIN stocks s ON s.symbol = p.symbol
+       WHERE s.active = 1 AND p.adjustment = ? AND p.trade_date >= ?
+       ORDER BY p.symbol ASC, p.trade_date ASC`,
+    )
+    .bind(adjustment, startDate)
+    .all();
+  return result.results.map((row) => ({
+    symbol: String(row.symbol),
+    date: String(row.trade_date),
+    open: row.open == null ? null : Number(row.open),
+    high: row.high == null ? null : Number(row.high),
+    low: row.low == null ? null : Number(row.low),
+    close: Number(row.close),
+    volume: row.volume == null ? null : Number(row.volume),
+    adjustment: String(row.adjustment) as "raw" | "qfq",
+    source: String(row.source),
+  }));
+}
+
+export async function getPortfolioSnapshot(
+  userId: string,
+): Promise<PortfolioSnapshot> {
+  await ensureDatabase();
+  const result = await getDatabase()
+    .prepare(
+      `SELECT l.id, l.symbol, l.invested_amount, l.entry_price, l.fees,
+              l.invested_at, l.note, l.created_at, l.updated_at,
+              s.name_zh, s.instrument_type,
+              (SELECT p.close FROM prices p
+               WHERE p.symbol = l.symbol AND p.adjustment = 'raw'
+               ORDER BY p.trade_date DESC LIMIT 1) AS current_price,
+              (SELECT p.trade_date FROM prices p
+               WHERE p.symbol = l.symbol AND p.adjustment = 'raw'
+               ORDER BY p.trade_date DESC LIMIT 1) AS current_price_date
+       FROM investment_lots l
+       INNER JOIN stocks s ON s.symbol = l.symbol
+       WHERE l.user_id = ?
+       ORDER BY l.invested_at DESC, l.id DESC`,
+    )
+    .bind(userId)
+    .all();
+
+  const lots: InvestmentLot[] = result.results.map((row) => {
+    const investedAmount = Number(row.invested_amount);
+    const entryPrice = Number(row.entry_price);
+    const fees = Number(row.fees ?? 0);
+    const quantity = investedAmount / entryPrice;
+    const currentPrice =
+      row.current_price == null ? null : Number(row.current_price);
+    const currentValue =
+      currentPrice == null ? null : quantity * currentPrice;
+    const totalCost = investedAmount + fees;
+    const unrealizedPnl =
+      currentValue == null ? null : currentValue - totalCost;
+    return {
+      id: Number(row.id),
+      symbol: String(row.symbol),
+      nameZh: String(row.name_zh),
+      instrumentType: String(row.instrument_type) as InvestmentLot["instrumentType"],
+      investedAmount,
+      entryPrice,
+      fees,
+      quantity,
+      investedAt: String(row.invested_at),
+      note: row.note == null ? null : String(row.note),
+      currentPrice,
+      currentPriceDate:
+        row.current_price_date == null
+          ? null
+          : String(row.current_price_date),
+      currentValue,
+      unrealizedPnl,
+      returnPct:
+        unrealizedPnl == null ? null : (unrealizedPnl / totalCost) * 100,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+    };
+  });
+
+  const positionMap = new Map<string, PortfolioPosition>();
+  for (const lot of lots) {
+    const existing = positionMap.get(lot.symbol);
+    if (!existing) {
+      positionMap.set(lot.symbol, {
+        symbol: lot.symbol,
+        nameZh: lot.nameZh,
+        instrumentType: lot.instrumentType,
+        totalInvested: lot.investedAmount,
+        totalFees: lot.fees,
+        totalCost: lot.investedAmount + lot.fees,
+        totalQuantity: lot.quantity,
+        averageEntryPrice: lot.entryPrice,
+        currentPrice: lot.currentPrice,
+        currentPriceDate: lot.currentPriceDate,
+        currentValue: lot.currentValue,
+        unrealizedPnl: lot.unrealizedPnl,
+        returnPct: lot.returnPct,
+        firstInvestedAt: lot.investedAt,
+        lotCount: 1,
+      });
+      continue;
+    }
+    existing.totalInvested += lot.investedAmount;
+    existing.totalFees += lot.fees;
+    existing.totalCost += lot.investedAmount + lot.fees;
+    existing.totalQuantity += lot.quantity;
+    existing.averageEntryPrice =
+      existing.totalInvested / existing.totalQuantity;
+    existing.firstInvestedAt =
+      lot.investedAt < existing.firstInvestedAt
+        ? lot.investedAt
+        : existing.firstInvestedAt;
+    existing.lotCount += 1;
+    if (existing.currentPrice != null) {
+      existing.currentValue = existing.totalQuantity * existing.currentPrice;
+      existing.unrealizedPnl = existing.currentValue - existing.totalCost;
+      existing.returnPct =
+        (existing.unrealizedPnl / existing.totalCost) * 100;
+    }
+  }
+
+  const positions = Array.from(positionMap.values()).sort(
+    (left, right) => (left.returnPct ?? Infinity) - (right.returnPct ?? Infinity),
+  );
+  const totalInvested = positions.reduce(
+    (sum, position) => sum + position.totalInvested,
+    0,
+  );
+  const totalFees = positions.reduce(
+    (sum, position) => sum + position.totalFees,
+    0,
+  );
+  const totalCost = totalInvested + totalFees;
+  const currentValue = positions.reduce(
+    (sum, position) => sum + (position.currentValue ?? 0),
+    0,
+  );
+  const missingPrices = positions.some(
+    (position) => position.currentValue == null,
+  );
+  const unrealizedPnl = currentValue - totalCost;
+
+  return {
+    lots,
+    positions,
+    summary: {
+      totalInvested,
+      totalFees,
+      totalCost,
+      currentValue,
+      unrealizedPnl,
+      returnPct:
+        totalCost === 0 || missingPrices
+          ? null
+          : (unrealizedPnl / totalCost) * 100,
+      positionCount: positions.length,
+    },
+  };
+}
+
+async function assertKnownSymbol(symbol: string) {
+  const row = await getDatabase()
+    .prepare("SELECT symbol FROM stocks WHERE symbol = ?")
+    .bind(symbol)
+    .first();
+  if (!row) throw new Error("该证券尚未加入观察名单");
+}
+
+export async function createInvestmentLot(
+  userId: string,
+  input: InvestmentLotInput,
+) {
+  await ensureDatabase();
+  await assertKnownSymbol(input.symbol);
+  const now = new Date().toISOString();
+  await getDatabase()
+    .prepare(
+      `INSERT INTO investment_lots
+       (user_id, symbol, invested_amount, entry_price, fees, invested_at, note,
+        created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      userId,
+      input.symbol,
+      input.investedAmount,
+      input.entryPrice,
+      input.fees,
+      input.investedAt,
+      input.note,
+      now,
+      now,
+    )
+    .run();
+}
+
+export async function updateInvestmentLot(
+  userId: string,
+  id: number,
+  input: InvestmentLotInput,
+) {
+  await ensureDatabase();
+  await assertKnownSymbol(input.symbol);
+  const result = await getDatabase()
+    .prepare(
+      `UPDATE investment_lots
+       SET symbol = ?, invested_amount = ?, entry_price = ?, fees = ?,
+           invested_at = ?, note = ?, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
+    )
+    .bind(
+      input.symbol,
+      input.investedAmount,
+      input.entryPrice,
+      input.fees,
+      input.investedAt,
+      input.note,
+      new Date().toISOString(),
+      id,
+      userId,
+    )
+    .run();
+  if (!Number(result.meta.changes ?? 0)) {
+    throw new Error("未找到该投资记录");
+  }
+}
+
+export async function deleteInvestmentLot(userId: string, id: number) {
+  await ensureDatabase();
+  const result = await getDatabase()
+    .prepare("DELETE FROM investment_lots WHERE id = ? AND user_id = ?")
+    .bind(id, userId)
+    .run();
+  if (!Number(result.meta.changes ?? 0)) {
+    throw new Error("未找到该投资记录");
+  }
 }
 
 export async function upsertPrices(points: PricePoint[]) {
